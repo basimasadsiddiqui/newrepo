@@ -1,0 +1,265 @@
+/**
+ * API: /api/invoices
+ * GET  — list invoices (with pagination)
+ * POST — create a new invoice with line items
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { PaymentCategory, PaymentStatus } from "@prisma/client";
+
+const ORG_ID = "org-akhtar";
+
+export async function GET(req: NextRequest) {
+    try {
+        const page = parseInt(req.nextUrl.searchParams.get("page") || "1", 10);
+        const pageSize = parseInt(req.nextUrl.searchParams.get("pageSize") || "20", 10);
+        const status = req.nextUrl.searchParams.get("status");
+
+        const where: Record<string, unknown> = { orgId: ORG_ID };
+        if (status) where.status = status;
+
+        const [invoices, total] = await Promise.all([
+            prisma.invoice.findMany({
+                where,
+                orderBy: { createdAt: "desc" },
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+                include: {
+                    items: { orderBy: { sortOrder: "asc" } },
+                },
+            }),
+            prisma.invoice.count({ where }),
+        ]);
+
+        return NextResponse.json({
+            success: true,
+            data: invoices.map((inv) => ({
+                ...inv,
+                totalAmount: inv.totalAmount.toString(),
+                balance: inv.balance.toString(),
+                date: inv.date.toISOString(),
+            })),
+            total,
+            page,
+            pageSize,
+        });
+    } catch (error) {
+        console.error("GET /api/invoices error:", error);
+        return NextResponse.json(
+            { success: false, error: "Failed to fetch invoices" },
+            { status: 500 }
+        );
+    }
+}
+
+export async function POST(req: NextRequest) {
+    try {
+        const body = await req.json();
+        const {
+            transactionType = "SALE",
+            partyId,
+            partyName,
+            partyMobile,
+            receiptNo,
+            date,
+            dueDate,
+            rateType = "FIXED",
+            goldRate = 0,
+            polishBasis = "Per Tola",
+            polishRate = 0,
+            labourBasis = "Per Tola",
+            labourRate = 0,
+            customerGoldWeight = 0,
+            customerGoldCarat = 24,
+            customerGoldValue = 0,
+            pasaRate = 0,
+            pasaDeduction = 0,
+            totalGoldWeight: _clientTotalGoldWeight,
+            totalAmount: _clientTotalAmount,
+            otherCharges = 0,
+            discount = 0,
+            cashReceived = 0,
+            goldReceived = 0,
+            balance: _clientBalance,
+            remarks,
+            items = [],
+            photos = [], // Extract photos
+        } = body;
+
+        // IMPORT CALCULATION ENGINE LOGIC HERE
+        const {
+            calculateLineItem,
+            calculateInvoiceSummary,
+            goldRateToPerGram,
+        } = await import("@/lib/calculationEngine");
+
+        const goldRatePerGram = goldRateToPerGram(goldRate || 0);
+
+        // RECALCULATE ITEMS SERVER-SIDE
+        const serverComputedItems = items.map((item: any, index: number) => {
+            const calc = calculateLineItem({
+                estimatedGoldWeight: item.estimatedGoldWeight || 0,
+                carat: item.carat || 24,
+                goldRatePerGram,
+                polishRate: polishRate || 0,
+                polishBasis: polishBasis as any,
+                labourRate: labourRate || 0,
+                labourBasis: labourBasis as any,
+                stoneWeight: item.stoneWeight || 0,
+                beadsWeight: item.beadsWeight || 0,
+                diamondWeight: item.diamondWeight || 0,
+                stoneAmount: item.stoneAmount || 0,
+                beadsAmount: item.beadsAmount || 0,
+                diamondAmount: item.diamondAmount || 0,
+            });
+
+            return {
+                sortOrder: index,
+                categoryId: (item.categoryId as string) || null,
+                description: (item.description as string) || null,
+                pieces: (item.pieces as number) || 1,
+                carat: (item.carat as number) || 24,
+                size: (item.size as string) || null,
+                isRepairingOrder: (item.isRepairingOrder as boolean) || false,
+                isSampleGold: (item.isSampleGold as boolean) || false,
+                estimatedGoldWeight: (item.estimatedGoldWeight as number) || 0,
+                adjustedGoldWeight: calc.adjustedGoldWeight,
+                estimatedGrossWeight: calc.estimatedGrossWeight,
+                stoneWeight: (item.stoneWeight as number) || 0,
+                beadsWeight: (item.beadsWeight as number) || 0,
+                diamondWeight: (item.diamondWeight as number) || 0,
+                goldAmount: calc.goldAmount,
+                stoneAmount: (item.stoneAmount as number) || 0,
+                beadsAmount: (item.beadsAmount as number) || 0,
+                diamondAmount: (item.diamondAmount as number) || 0,
+                diamondEntries: item.diamondEntries || null,
+                polishAmount: calc.polishAmount,
+                labourAmount: calc.labourAmount,
+                totalAmount: calc.totalAmount,
+                imageUrl: (item.imageUrl as string) || null,
+                inventoryItemId: (item.inventoryItemId as string) || null,
+            };
+        });
+
+        // RECALCULATE SUMMARY SERVER-SIDE
+        const serverSummary = calculateInvoiceSummary({
+            items: serverComputedItems.map((i: any) => ({
+                totalAmount: i.totalAmount,
+                adjustedGoldWeight: i.adjustedGoldWeight,
+            })),
+            otherCharges: otherCharges || 0,
+            discount: discount || 0,
+            cashReceived: cashReceived || 0,
+            goldReceived: goldReceived || 0,
+            customerGoldWeight: customerGoldWeight || 0,
+            customerGoldCarat: customerGoldCarat || 24,
+            goldRatePerGram,
+            pasaPercent: pasaRate || 0,
+        });
+
+
+        let finalPartyId = partyId;
+
+        // Auto-Save Party Logic: If no ID but Name is provided, find or create
+        if (!finalPartyId && partyName && partyName.trim()) {
+            const normalizedName = partyName.trim();
+            const normalizedMobile = partyMobile ? partyMobile.trim() : null;
+
+            // Try to find existing party by name (and mobile if provided)
+            const existingParty = await prisma.party.findFirst({
+                where: {
+                    orgId: ORG_ID,
+                    name: { equals: normalizedName, mode: "insensitive" },
+                    ...(normalizedMobile ? { mobile: normalizedMobile } : {}),
+                },
+            });
+
+            if (existingParty) {
+                finalPartyId = existingParty.id;
+            } else {
+                // Create new party
+                const newParty = await prisma.party.create({
+                    data: {
+                        orgId: ORG_ID,
+                        name: normalizedName,
+                        mobile: normalizedMobile,
+                        type: transactionType === "SALE" ? "Customer" : "Supplier",
+                        balance: 0,
+                    },
+                });
+                finalPartyId = newParty.id;
+            }
+        }
+
+        const invoice = await prisma.invoice.create({
+            data: {
+                orgId: ORG_ID,
+                transactionType,
+                partyId: finalPartyId || null,
+                partyName: partyName || null,
+                partyMobile: partyMobile || null,
+                receiptNo: receiptNo || null,
+                date: date ? new Date(date) : new Date(),
+                dueDate: dueDate ? new Date(dueDate) : null,
+                rateType,
+                goldRate: goldRate || null,
+                polishBasis: polishBasis || null,
+                polishRate: polishRate || null,
+                labourBasis: labourBasis || null,
+                labourRate: labourRate || null,
+                customerGoldWeight: customerGoldWeight || null,
+                customerGoldCarat: customerGoldCarat || null,
+                customerGoldValue: serverSummary.customerGoldValue || null,
+                pasaRate: pasaRate || null,
+                pasaDeduction: serverSummary.pasaDeduction || null,
+                totalGoldWeight: serverSummary.totalGoldWeight || 0,
+                totalAmount: serverSummary.totalAmount || 0,
+                otherCharges: otherCharges || 0,
+                discount: discount || 0,
+                cashReceived: cashReceived || 0,
+                goldReceived: goldReceived || 0,
+                balance: serverSummary.balance || 0,
+                remarks: remarks || null,
+                photos: photos || [], // Save photos
+                items: {
+                    create: serverComputedItems,
+                },
+            },
+            include: { items: true },
+        });
+
+        // --- NEW: AUTO PAYMENT LEDGER GENERATION ---
+        // If this invoice generated a remaining balance owed, automatically open a Payment
+        const numBalance = Number(serverSummary.balance);
+        const numTotal = Number(serverSummary.totalAmount);
+        if (numBalance > 0 && finalPartyId) {
+            await prisma.payment.create({
+                data: {
+                    orgId: ORG_ID,
+                    partyId: finalPartyId,
+                    invoiceId: invoice.id,
+                    // If Sale -> Customer owes us -> RECEIVABLE. If Purchase -> We owe Supplier -> PAYABLE.
+                    category: transactionType === "SALE" ? PaymentCategory.RECEIVABLE : PaymentCategory.PAYABLE,
+                    totalAmount: numTotal,
+                    paidAmount: numTotal - numBalance, // Handle partial payments made AT time of invoice
+                    remainingAmount: numBalance,
+                    invoiceDate: invoice.date,
+                    dueDate: invoice.dueDate || invoice.date, // Default due date to today if not provided
+                    status: (numTotal - numBalance) > 0 ? PaymentStatus.PARTIAL : PaymentStatus.PENDING,
+                }
+            });
+        }
+
+        return NextResponse.json(
+            { success: true, data: invoice },
+            { status: 201 }
+        );
+    } catch (error) {
+        console.error("POST /api/invoices error:", error);
+        return NextResponse.json(
+            { success: false, error: "Failed to create invoice" },
+            { status: 500 }
+        );
+    }
+}

@@ -1,0 +1,710 @@
+// Prisma Schema for Akhtar Jewellers ERP
+// All monetary and weight fields use Decimal for precision
+// Multi-tenant ready with orgId on every table
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Multi-Tenancy ──────────────────────────────────────────────
+
+model Organization {
+  id                  String   @id @default(cuid())
+  name                String
+  address             String?
+  phone               String?
+  logo                String?
+  settings            Json     @default("{}")
+  metalPremiumPercent Decimal  @default(0) @db.Decimal(5, 2) // Local market premium (e.g., 1.50 = +1.5%)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  users               User[]
+  parties             Party[]
+  categories          Category[]
+  goldRates           GoldRate[]
+  invoices            Invoice[]
+  polishLabourConfigs PolishLabourConfig[]
+  auditLogs           AuditLog[]
+  ledgerEntries       LedgerEntry[]
+  inventoryItems      InventoryItem[]
+  stockMovements      StockMovement[]
+  metalTypes          MetalType[]
+  products            Product[]
+  metalRates          MetalRate[]
+  metalRateHistories  MetalRateHistory[]
+  payments            Payment[]
+  customerOrders      CustomerOrder[]
+}
+
+// ─── Authentication & RBAC ─────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  OPERATOR
+  VIEWER
+}
+
+model User {
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id])
+  name         String
+  email        String       @unique
+  passwordHash String
+  role         UserRole     @default(OPERATOR)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  invoices  Invoice[]
+  auditLogs AuditLog[]
+
+  @@index([orgId])
+}
+
+// ─── Party Master (unified Customer / Supplier) ────────────────
+
+model Party {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  name      String
+  mobile    String?
+  address   String?
+  type      String       @default("Both") // "Customer" | "Supplier" | "Both"
+  balance     Decimal      @default(0) @db.Decimal(14, 4) // positive = they owe us
+  goldBalance Decimal      @default(0) @db.Decimal(14, 4) // Gold balance
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  invoices       Invoice[]
+  ledgerEntries  LedgerEntry[]
+  suppliedItems  InventoryItem[] // Items supplied by this party
+  payments       Payment[]
+  customerOrders CustomerOrder[] @relation("OrderCustomer")
+  karigarOrders  CustomerOrder[] @relation("OrderKarigar")
+
+  @@index([orgId])
+  @@index([orgId, name])
+  @@index([orgId, mobile])
+}
+
+// ─── Categories ────────────────────────────────────────────────
+
+model Category {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  name      String
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  invoiceItems       InvoiceItem[]
+  products           Product[]
+  customerOrderItems CustomerOrderItem[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+// ─── Gold Rates ────────────────────────────────────────────────
+// Deprecated: Replaced by MetalRate and MetalRateHistory
+model GoldRate {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  date      DateTime     @default(now())
+  rate      Decimal      @db.Decimal(14, 4)
+  carat     Int          @default(24)
+  createdAt DateTime     @default(now())
+
+  @@index([orgId, date])
+  @@index([orgId, carat])
+}
+
+// ─── Metal Rates (New System) ──────────────────────────────────
+
+model MetalRate {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  metal       String // "XAU" (Gold), "XAG" (Silver), "DIA" (Diamond)
+  ratePerGram Decimal      @db.Decimal(14, 4) // In PKR
+  lastUpdated DateTime     @default(now())
+  source      String       @default("API") // "API" | "MANUAL"
+  updatedBy   String? // Empty if API, User ID if manual
+
+  @@unique([orgId, metal])
+  @@index([orgId, metal])
+}
+
+model MetalRateHistory {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  metal       String
+  ratePerGram Decimal      @db.Decimal(14, 4)
+  recordedAt  DateTime     @default(now())
+  source      String
+  updatedBy   String?
+
+  @@index([orgId, metal, recordedAt])
+}
+
+// ─── Polish & Labour Configuration ─────────────────────────────
+
+model PolishLabourConfig {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  polishBasis String       @default("Per Tola") // "Per Tola" | "Per Gram"
+  polishRate  Decimal      @db.Decimal(14, 4)
+  labourBasis String       @default("Per Tola") // "Per Tola" | "Per Gram"
+  labourRate  Decimal      @db.Decimal(14, 4)
+  isDefault   Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([orgId])
+}
+
+// ─── Customer Orders ──────────────────────────────────────────
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+// ─── Invoice (Header) ─────────────────────────────────────────
+
+enum InvoiceStatus {
+  DRAFT
+  FINALIZED
+  CANCELLED
+}
+
+enum RateType {
+  FIXED
+  UNFIXED
+}
+
+enum TransactionType {
+  SALE
+  PURCHASE
+}
+
+model Invoice {
+  id              String          @id @default(cuid())
+  orgId           String
+  org             Organization    @relation(fields: [orgId], references: [id])
+  orderNumber     Int             @default(autoincrement())
+  receiptNo       String?
+  date            DateTime        @default(now())
+  dueDate         DateTime?
+  rateType        RateType        @default(FIXED)
+  status          InvoiceStatus   @default(DRAFT)
+  transactionType TransactionType @default(SALE)
+
+  // Purchase Specific Fields
+  supplierInvoiceNo String?
+  currency          String   @default("PKR")
+  currencyRate      Decimal  @default(1) @db.Decimal(10, 4)
+  intlOunceRate     Decimal  @default(0) @db.Decimal(14, 4)
+
+  // Party (Customer or Supplier)
+  partyId     String?
+  party       Party?  @relation(fields: [partyId], references: [id])
+  partyName   String?
+  partyMobile String?
+
+  // Customer Old Gold
+  customerGoldWeight Decimal? @db.Decimal(14, 4)
+  customerGoldCarat  Int?
+  customerGoldValue  Decimal? @db.Decimal(14, 4)
+
+  // Pasa Rate
+  pasaRate      Decimal? @db.Decimal(10, 4)
+  pasaDeduction Decimal? @db.Decimal(14, 4)
+
+  // Gold rate used for this invoice
+  goldRate Decimal? @db.Decimal(14, 4)
+
+  // Jewellery Rules (can override org defaults per invoice)
+  polishBasis String?  @default("Per Tola")
+  polishRate  Decimal? @db.Decimal(14, 4)
+  labourBasis String?  @default("Per Tola")
+  labourRate  Decimal? @db.Decimal(14, 4)
+  kaatBasis   String?  @default("Direct Weight")
+  kaatRate    Decimal? @default(0) @db.Decimal(14, 4)
+
+  // Totals (all Decimal)
+  totalGoldWeight Decimal @default(0) @db.Decimal(14, 4)
+  totalAmount     Decimal @default(0) @db.Decimal(14, 4)
+  otherCharges    Decimal @default(0) @db.Decimal(14, 4)
+  discount        Decimal @default(0) @db.Decimal(14, 4)
+  cashReceived    Decimal @default(0) @db.Decimal(14, 4)
+  goldReceived    Decimal @default(0) @db.Decimal(14, 4)
+  balance         Decimal @default(0) @db.Decimal(14, 4)
+
+  // Metadata
+  remarks     String?
+  photos      String[] @default([]) // Array of photo URLs
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items         InvoiceItem[]
+  ledgerEntries LedgerEntry[]
+  auditLogs     AuditLog[]
+  payment       Payment?
+
+  @@index([orgId, date])
+  @@index([orgId, status])
+  @@index([orgId, partyId])
+  @@index([orgId, orderNumber])
+}
+
+// ─── Invoice Line Items ────────────────────────────────────────
+
+model InvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  sortOrder Int     @default(0)
+
+  // Item Details
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  description String?
+  pieces      Int       @default(1)
+  carat       Int       @default(24)
+  size        String?
+
+  // Flags
+  isRepairingOrder Boolean @default(false)
+  isSampleGold     Boolean @default(false)
+
+  // Gold Weights (all Decimal)
+  estimatedGoldWeight  Decimal @default(0) @db.Decimal(14, 4)
+  adjustedGoldWeight   Decimal @default(0) @db.Decimal(14, 4)
+  estimatedGrossWeight Decimal @default(0) @db.Decimal(14, 4)
+  kaatWeight           Decimal @default(0) @db.Decimal(14, 4)
+
+  // Other Weights
+  stoneWeight   Decimal @default(0) @db.Decimal(14, 4)
+  beadsWeight   Decimal @default(0) @db.Decimal(14, 4)
+  diamondWeight Decimal @default(0) @db.Decimal(14, 4)
+
+  // Amounts (all Decimal)
+  goldAmount    Decimal @default(0) @db.Decimal(14, 4)
+  stoneAmount   Decimal @default(0) @db.Decimal(14, 4)
+  beadsAmount   Decimal @default(0) @db.Decimal(14, 4)
+  diamondAmount  Decimal @default(0) @db.Decimal(14, 4)
+  diamondEntries Json?   // Structured diamond entry details [{ruleType, rate, tagCaption, weight, detail, total}]
+  polishAmount   Decimal @default(0) @db.Decimal(14, 4)
+  labourAmount   Decimal @default(0) @db.Decimal(14, 4)
+  totalAmount    Decimal @default(0) @db.Decimal(14, 4)
+
+  // Image
+  imageUrl String?
+
+  // Inventory Link
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([inventoryItemId])
+}
+
+// ─── Audit Log ─────────────────────────────────────────────────
+
+model AuditLog {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id])
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id])
+  invoiceId  String?
+  invoice    Invoice?     @relation(fields: [invoiceId], references: [id])
+  action     String // CREATE, UPDATE, DELETE, FINALIZE, CANCEL
+  entityType String // Invoice, InvoiceItem, Customer, etc.
+  entityId   String
+  changes    Json? // { field: { old, new } }
+  timestamp  DateTime     @default(now())
+
+  @@index([orgId, timestamp])
+  @@index([orgId, entityType, entityId])
+}
+
+// ─── Ledger Entry ──────────────────────────────────────────────
+
+enum LedgerType {
+  DEBIT
+  CREDIT
+}
+
+model LedgerEntry {
+  id          String              @id @default(cuid())
+  orgId       String
+  org         Organization        @relation(fields: [orgId], references: [id])
+  partyId     String
+  party       Party               @relation(fields: [partyId], references: [id])
+  invoiceId   String?
+  invoice     Invoice?            @relation(fields: [invoiceId], references: [id])
+  paymentTxId String?             @unique // Link to a specific PaymentTransaction
+  paymentTx   PaymentTransaction? @relation(fields: [paymentTxId], references: [id])
+  type        LedgerType
+  amount      Decimal             @db.Decimal(14, 4)
+  balance     Decimal             @db.Decimal(14, 4)
+  narration   String?
+  date        DateTime            @default(now())
+
+  @@index([orgId, partyId, date])
+  @@index([orgId, invoiceId])
+}
+
+// ─── Payments Module ───────────────────────────────────────────
+
+enum PaymentCategory {
+  RECEIVABLE // Money owed to us (Customer)
+  PAYABLE // Money we owe (Supplier/Karigar/Refinery)
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+enum PaymentMode {
+  CASH
+  BANK
+  GOLD
+  MIXED // Cash + Gold
+}
+
+model Payment {
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+
+  // Relations
+  partyId   String
+  party     Party    @relation(fields: [partyId], references: [id])
+  invoiceId String?  @unique // Optional link if tied to a specific invoice
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  // Classification
+  category PaymentCategory
+  status   PaymentStatus   @default(PENDING) // Auto-updated via triggers/logic
+
+  // Amounts
+  totalAmount     Decimal @db.Decimal(14, 4)
+  paidAmount      Decimal @default(0) @db.Decimal(14, 4)
+  remainingAmount Decimal @db.Decimal(14, 4)
+
+  // Dates
+  invoiceDate DateTime  @default(now())
+  dueDate     DateTime
+  paidDate    DateTime?
+
+  // Installments Details
+  isInstallmentBased Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  installments PaymentInstallment[]
+  transactions PaymentTransaction[]
+  reminders    PaymentReminder[]
+
+  @@index([orgId, category])
+  @@index([orgId, status])
+  @@index([orgId, dueDate])
+  @@index([orgId, partyId])
+}
+
+// Represents actual payment events (handles partials and mixed modes)
+model PaymentTransaction {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  amount Decimal     @db.Decimal(14, 4) // Cash equivalent value
+  mode   PaymentMode
+  date   DateTime    @default(now())
+
+  // If mode is GOLD or MIXED, capturing historical snapshot
+  goldWeight Decimal? @db.Decimal(14, 4)
+  goldRate   Decimal? @db.Decimal(14, 4) // Locked rate at exact time of transaction
+
+  notes String?
+
+  // Explicitly link to LedgerEntry for atomic tracking
+  ledgerEntry LedgerEntry?
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+}
+
+model PaymentInstallment {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  installmentNo Int
+  amount        Decimal       @db.Decimal(14, 4)
+  dueDate       DateTime
+  paidAmount    Decimal       @default(0) @db.Decimal(14, 4)
+  status        PaymentStatus @default(PENDING)
+
+  paidDate DateTime?
+
+  @@index([paymentId])
+  @@index([dueDate])
+}
+
+model PaymentReminder {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  type    String // "BEFORE_DUE" (3 days), "ON_DUE", "OVERDUE" (3 days)
+  channel String // "EMAIL", "WHATSAPP", "IN_APP", "SMS"
+  sentAt  DateTime @default(now())
+
+  @@index([paymentId])
+}
+
+// ─── Inventory Module ──────────────────────────────────────────
+
+model MetalType {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  name        String // e.g., "Gold", "Silver", "Platinum"
+  purity      String // e.g., "22K", "18K", "999", "925" (Display label)
+  purityValue Decimal      @default(0) @db.Decimal(10, 4) // e.g., 91.6, 75.0 (Percentage or ratio)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+
+  products           Product[]
+  inventoryItems     InventoryItem[] // Direct link if needed for quick lookups
+  customerOrderItems CustomerOrderItem[]
+
+  @@unique([orgId, name, purity])
+  @@index([orgId])
+}
+
+model Product {
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+
+  // Basic Info
+  name        String
+  designCode  String?
+  description String?
+  imageUrl    String?
+
+  // Classification
+  categoryId  String
+  category    Category  @relation(fields: [categoryId], references: [id])
+  metalTypeId String
+  metalType   MetalType @relation(fields: [metalTypeId], references: [id])
+
+  // Settings
+  makingCharges    Decimal @default(0) @db.Decimal(14, 4)
+  makingChargeType String  @default("PER_GRAM") // PER_GRAM, FIXED, PERCENTAGE
+  wastagePercent   Decimal @default(0) @db.Decimal(5, 2)
+
+  // Stock Control
+  isActive         Boolean @default(true)
+  reorderThreshold Int     @default(0)
+
+  // Type flags
+  isJewellery Boolean @default(true) // vs Raw Metal vs Loose Stone
+  isRetail    Boolean @default(true)
+  isWholesale Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inventoryItems InventoryItem[]
+
+  @@index([orgId, categoryId])
+  @@index([orgId, metalTypeId])
+  @@index([orgId, designCode])
+}
+
+enum StockStatus {
+  AVAILABLE
+  SOLD
+  RESERVED
+  RETURNED
+  MEMO_OUT // "Jangad" / Approval
+}
+
+model InventoryItem {
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+
+  // Relationships
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Metal/Category can be derived from Product, but denormalizing checks:
+  metalTypeId String?
+  metalType   MetalType? @relation(fields: [metalTypeId], references: [id]) // Optional override or cache
+
+  supplierId String?
+  supplier   Party?  @relation(fields: [supplierId], references: [id])
+
+  // Identification
+  sku String // Barcode / Tag Number
+
+  // Weights (The core of Jewellery ERP)
+  grossWeight Decimal @default(0) @db.Decimal(14, 4)
+  netWeight   Decimal @default(0) @db.Decimal(14, 4)
+  stoneWeight Decimal @default(0) @db.Decimal(14, 4)
+  otherWeight Decimal @default(0) @db.Decimal(14, 4)
+
+  // Pricing Overrides & Sales Info (Gallery Support)
+  makingCharges  Decimal? @db.Decimal(14, 4) // Override Product default
+  wastagePercent Decimal? @db.Decimal(5, 2) // Override Product default
+  retailPrice    Decimal  @default(0) @db.Decimal(14, 4) // Fixed Tag Price
+  wholesalePrice Decimal  @default(0) @db.Decimal(14, 4)
+  designCode     String? // Cache for easier search
+
+  // Costs & Price (Optional for stock, required for valuation)
+  quantity Int @default(1) // Usually 1 for unique tags, >1 for loose items
+
+  // Status
+  status   StockStatus @default(AVAILABLE)
+  location String? // e.g. "Safe 1", "Counter 2"
+
+  // Audit
+  importedAt DateTime  @default(now())
+  soldAt     DateTime?
+  deletedAt  DateTime? // Soft Delete support
+  saleId     String? // Link to Invoice if sold (needs Invoice model update or separate link)
+  // Note: linking to InvoiceItem in future if needed
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements    StockMovement[]
+  invoiceItems InvoiceItem[]
+
+  @@unique([orgId, sku]) // SKU must be unique per org
+  @@index([orgId, status])
+  @@index([orgId, productId])
+  @@index([orgId, supplierId])
+}
+
+enum MovementType {
+  PURCHASE
+  SALE
+  RETURN
+  ADJUSTMENT
+  TRANSFER
+  OPENING_STOCK
+}
+
+model StockMovement {
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  type MovementType
+
+  quantityChange Int // +1, -1, etc.
+  weightChange   Decimal @default(0) @db.Decimal(14, 4) // Net weight delta
+
+  referenceId String? // Invoice ID, Purchase ID, etc.
+  remarks     String?
+
+  createdAt DateTime @default(now())
+  createdBy String? // User ID
+
+  @@index([orgId, inventoryItemId])
+  @@index([orgId, type])
+  @@index([orgId, createdAt])
+}
+
+// ─── Customer Orders ───────────────────────────────────────────
+
+model CustomerOrder {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  orderNumber Int          @default(autoincrement())
+
+  partyId            String?
+  party              Party?  @relation("OrderCustomer", fields: [partyId], references: [id])
+  customCustomerName String? @db.VarChar(255) // Optional free-form customer name if no party selected
+
+  karigarId String?
+  karigar   Party?  @relation("OrderKarigar", fields: [karigarId], references: [id])
+  customKarigarName String? @db.VarChar(255) // Optional free-form karigar name if no party selected
+
+  date    DateTime    @default(now())
+  dueDate DateTime?
+  status  OrderStatus @default(PENDING)
+
+  totalAmount Decimal @default(0) @db.Decimal(14, 4)
+
+  notes String? // Order-level notes or instructions
+
+  items CustomerOrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, date])
+  @@index([orgId, status])
+  @@index([orgId, partyId])
+}
+
+model CustomerOrderItem {
+  id      String        @id @default(cuid())
+  orderId String
+  order   CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  description String?
+  tagNo       String? // Maps to 'Tag No / Order Detail' in UI
+
+  categoryId  String?
+  category    Category?  @relation(fields: [categoryId], references: [id])
+  metalTypeId String?
+  metalType   MetalType? @relation(fields: [metalTypeId], references: [id])
+
+  quantity    Int     @default(1)
+  weight      Decimal @default(0) @db.Decimal(14, 4)
+  rate        Decimal @default(0) @db.Decimal(14, 4)
+  totalAmount Decimal @default(0) @db.Decimal(14, 4)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+}
