@@ -39,3 +39,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local debug / scratch scripts
+check-*.js
+compare-db.js
+fix-org.js
+reproduce-upsert.js
+test-*.js
+test_connect.js
+insert_org.sql
+qc
+query
+scratch/
+deploy/
+server-err.txt
+server-out.txt
+devserver-*.log
+
+# generated PDF samples
+*.pdf
+
+# claude AI memory
+.claude/

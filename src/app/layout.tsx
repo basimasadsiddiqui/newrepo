@@ -17,8 +17,7 @@
 
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/layout/Sidebar";
-import Header from "@/components/layout/Header";
+import LayoutClient from "@/components/layout/LayoutClient";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
@@ -47,11 +46,7 @@ export default function RootLayout({
           }}
         />
         <div className="app-layout">
-          <Sidebar />
-          <div className="app-main">
-            <Header />
-            <main className="app-content">{children}</main>
-          </div>
+          <LayoutClient>{children}</LayoutClient>
         </div>
       </body>
     </html>

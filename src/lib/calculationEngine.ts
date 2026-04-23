@@ -314,14 +314,30 @@ export function calcOldGoldValue(
  * @returns Pasa deduction amount in PKR
  */
 export function calcPasaDeduction(
-    pondPasaWeight: number,
+    goldWeight: number,
     pasaRate: number,
     goldRatePerGram: number
 ): number {
-    const result = new Decimal(pondPasaWeight)
-        .times(new Decimal(pasaRate))
-        .times(new Decimal(goldRatePerGram));
-    return result.toDecimalPlaces(5).toNumber();
+    if (pasaRate <= 0) return 0;
+    // User enters the deduction parts (e.g. 1 means 1 out of 96 parts is deducted)
+    // Pure weight = goldWeight / 96 * (96 - pasaRate)  →  10/96*(96-1) = 9.896
+    // Deduction in PKR = (goldWeight - pureWeight) * goldRatePerGram
+    //                  = goldWeight * pasaRate / 96 * goldRatePerGram
+    const deduction = new Decimal(goldWeight)
+        .times(pasaRate)
+        .dividedBy(96)
+        .times(goldRatePerGram);
+    return deduction.toDecimalPlaces(5).toNumber();
+}
+
+/** Returns the pure gold weight after pasa deduction: goldWeight / 96 * (96 - pasaRate) */
+export function calcPasaAdjustedWeight(goldWeight: number, pasaRate: number): number {
+    if (pasaRate <= 0 || goldWeight <= 0) return goldWeight;
+    return new Decimal(goldWeight)
+        .dividedBy(96)
+        .times(new Decimal(96).minus(pasaRate))
+        .toDecimalPlaces(5)
+        .toNumber();
 }
 
 // ─── Line Item Total ───────────────────────────────────────────
@@ -396,14 +412,20 @@ export function calculateLineItem(params: {
 
         if (params.kaatBasis === "Direct Weight") {
             kaatWeight = params.kaatRate;
+            adjustedGoldWeight = new Decimal(pureWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
         } else if (params.kaatBasis === "Ratti Kaat") {
-            // Ratti Kaat Formula provided by user:
-            // 1 Ratti = 0.1215 grams
-            // Kaat Weight (grams) = Ratti × 0.1215
-            kaatWeight = new Decimal(params.kaatRate).times(0.1215).toDecimalPlaces(4).toNumber();
+            // Ratti Kaat: goldWeight / 96 * (96 - kaatRate)
+            // e.g. 10g / 96 * (96 - 1) = 9.896g
+            adjustedGoldWeight = new Decimal(params.estimatedGoldWeight)
+                .dividedBy(96)
+                .times(new Decimal(96).minus(params.kaatRate))
+                .toDecimalPlaces(4)
+                .toNumber();
+            kaatWeight = new Decimal(params.estimatedGoldWeight).minus(adjustedGoldWeight).toDecimalPlaces(4).toNumber();
+        } else {
+            adjustedGoldWeight = pureWeight;
         }
 
-        adjustedGoldWeight = new Decimal(pureWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
         // Ensure it doesn't drop below 0
         if (adjustedGoldWeight < 0) adjustedGoldWeight = 0;
     } else {

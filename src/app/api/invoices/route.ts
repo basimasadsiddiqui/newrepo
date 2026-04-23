@@ -55,7 +55,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
+        console.log("POST /api/invoices - Starting invoice creation");
         const body = await req.json();
+        console.log("Request body received:", JSON.stringify(body, null, 2));
         const {
             transactionType = "SALE",
             partyId,
@@ -70,6 +72,12 @@ export async function POST(req: NextRequest) {
             polishRate = 0,
             labourBasis = "Per Tola",
             labourRate = 0,
+            kaatBasis,
+            kaatRate,
+            supplierInvoiceNo,
+            currency = "PKR",
+            currencyRate = 1,
+            intlOunceRate = 0,
             customerGoldWeight = 0,
             customerGoldCarat = 24,
             customerGoldValue = 0,
@@ -93,12 +101,21 @@ export async function POST(req: NextRequest) {
             calculateInvoiceSummary,
             goldRateToPerGram,
         } = await import("@/lib/calculationEngine");
+        console.log("Calculation engine imported successfully");
 
         const goldRatePerGram = goldRateToPerGram(goldRate || 0);
+        console.log("goldRatePerGram calculated:", goldRatePerGram);
 
         // RECALCULATE ITEMS SERVER-SIDE
         const serverComputedItems = items.map((item: any, index: number) => {
+            const itemStoneRate = (item.stoneRate as number) || 0;
+            const itemStoneWt = (item.stoneWeight as number) || 0;
+            const itemStoneAmt = itemStoneRate > 0 && itemStoneWt > 0
+                ? itemStoneRate * itemStoneWt
+                : (item.stoneAmount as number) || 0;
+
             const calc = calculateLineItem({
+                transactionType,
                 estimatedGoldWeight: item.estimatedGoldWeight || 0,
                 carat: item.carat || 24,
                 goldRatePerGram,
@@ -106,31 +123,43 @@ export async function POST(req: NextRequest) {
                 polishBasis: polishBasis as any,
                 labourRate: labourRate || 0,
                 labourBasis: labourBasis as any,
-                stoneWeight: item.stoneWeight || 0,
+                kaatRate: kaatRate || 0,
+                kaatBasis: kaatBasis as any,
+                stoneWeight: itemStoneWt,
                 beadsWeight: item.beadsWeight || 0,
                 diamondWeight: item.diamondWeight || 0,
-                stoneAmount: item.stoneAmount || 0,
+                stoneAmount: itemStoneAmt,
                 beadsAmount: item.beadsAmount || 0,
                 diamondAmount: item.diamondAmount || 0,
             });
+
+            // If stoneRate provided, recalculate stoneAmount from rate × weight
+            const stoneRate = (item.stoneRate as number) || 0;
+            const stoneWt = (item.stoneWeight as number) || 0;
+            const effectiveStoneAmount = stoneRate > 0 && stoneWt > 0
+                ? stoneRate * stoneWt
+                : (item.stoneAmount as number) || 0;
 
             return {
                 sortOrder: index,
                 categoryId: (item.categoryId as string) || null,
                 description: (item.description as string) || null,
+                huid: (item.huid as string) || null,
                 pieces: (item.pieces as number) || 1,
                 carat: (item.carat as number) || 24,
                 size: (item.size as string) || null,
                 isRepairingOrder: (item.isRepairingOrder as boolean) || false,
                 isSampleGold: (item.isSampleGold as boolean) || false,
+                isBulkPurchase: (item.isBulkPurchase as boolean) || false,
                 estimatedGoldWeight: (item.estimatedGoldWeight as number) || 0,
                 adjustedGoldWeight: calc.adjustedGoldWeight,
                 estimatedGrossWeight: calc.estimatedGrossWeight,
-                stoneWeight: (item.stoneWeight as number) || 0,
+                stoneWeight: stoneWt,
+                stoneRate: stoneRate || null,
                 beadsWeight: (item.beadsWeight as number) || 0,
                 diamondWeight: (item.diamondWeight as number) || 0,
                 goldAmount: calc.goldAmount,
-                stoneAmount: (item.stoneAmount as number) || 0,
+                stoneAmount: effectiveStoneAmount,
                 beadsAmount: (item.beadsAmount as number) || 0,
                 diamondAmount: (item.diamondAmount as number) || 0,
                 diamondEntries: item.diamondEntries || null,
@@ -163,6 +192,7 @@ export async function POST(req: NextRequest) {
 
         // Auto-Save Party Logic: If no ID but Name is provided, find or create
         if (!finalPartyId && partyName && partyName.trim()) {
+            console.log("Creating/finding party:", partyName);
             const normalizedName = partyName.trim();
             const normalizedMobile = partyMobile ? partyMobile.trim() : null;
 
@@ -177,8 +207,10 @@ export async function POST(req: NextRequest) {
 
             if (existingParty) {
                 finalPartyId = existingParty.id;
+                console.log("Found existing party:", existingParty.id);
             } else {
                 // Create new party
+                console.log("Creating new party");
                 const newParty = await prisma.party.create({
                     data: {
                         orgId: ORG_ID,
@@ -189,9 +221,11 @@ export async function POST(req: NextRequest) {
                     },
                 });
                 finalPartyId = newParty.id;
+                console.log("Created new party:", newParty.id);
             }
         }
 
+        console.log("Creating invoice with finalPartyId:", finalPartyId);
         const invoice = await prisma.invoice.create({
             data: {
                 orgId: ORG_ID,
@@ -208,6 +242,12 @@ export async function POST(req: NextRequest) {
                 polishRate: polishRate || null,
                 labourBasis: labourBasis || null,
                 labourRate: labourRate || null,
+                kaatBasis: kaatBasis || null,
+                kaatRate: kaatRate || null,
+                supplierInvoiceNo: supplierInvoiceNo || null,
+                currency: currency || "PKR",
+                currencyRate: currencyRate || 1,
+                intlOunceRate: intlOunceRate || 0,
                 customerGoldWeight: customerGoldWeight || null,
                 customerGoldCarat: customerGoldCarat || null,
                 customerGoldValue: serverSummary.customerGoldValue || null,
@@ -257,6 +297,7 @@ export async function POST(req: NextRequest) {
         );
     } catch (error) {
         console.error("POST /api/invoices error:", error);
+        console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
         return NextResponse.json(
             { success: false, error: "Failed to create invoice" },
             { status: 500 }

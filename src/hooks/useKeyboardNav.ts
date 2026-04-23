@@ -6,8 +6,8 @@
  * Provides keyboard shortcuts for fast data entry:
  * - Ctrl+S → Save draft
  * - Ctrl+Enter → Add item / Finalize
+ * - Enter → Move focus to next field (same as Tab)
  * - Escape → Cancel edit / Reset form
- * - Tab → Natural field navigation (browser default)
  * ============================================================================
  */
 
@@ -52,14 +52,21 @@ export function useKeyboardNav({
                 return;
             }
 
-            // Enter — Add item (only when in an input, not a textarea)
+            // Enter — move to next focusable field (like Tab)
             if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
                 const target = e.target as HTMLElement;
                 const tagName = target.tagName.toLowerCase();
-                // Only trigger on input fields within the item entry form
-                if (tagName === "input" && target.closest("[data-item-form]")) {
+                if (tagName === "input" || tagName === "select") {
                     e.preventDefault();
-                    onAddItem();
+                    const focusable = Array.from(
+                        document.querySelectorAll<HTMLElement>(
+                            'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+                        )
+                    ).filter(el => el.offsetParent !== null);
+                    const idx = focusable.indexOf(target);
+                    if (idx >= 0 && idx < focusable.length - 1) {
+                        focusable[idx + 1].focus();
+                    }
                     return;
                 }
             }

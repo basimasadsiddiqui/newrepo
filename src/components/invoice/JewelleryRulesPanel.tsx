@@ -19,7 +19,7 @@ import { Scale, Gem, ArrowDown, Percent } from "lucide-react";
 import { formatCurrency, formatWeight } from "@/lib/utils";
 
 import { type TransactionType } from "@/types";
-import { type LabourBasis, type KaatBasis, type PolishLabourBasis } from "@/lib/calculationEngine";
+import { type LabourBasis, type KaatBasis, type PolishLabourBasis, calcPasaAdjustedWeight } from "@/lib/calculationEngine";
 
 const POLISH_BASIS_OPTIONS: PolishLabourBasis[] = ["Per Tola", "Pasa", "Ratti Cut"];
 const LABOUR_BASIS_OPTIONS: LabourBasis[] = ["Per Tola", "Per Gram", "Fixed"];
@@ -281,12 +281,13 @@ export default function JewelleryRulesPanel({
                                 Pasa
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rate</label>
+                                <label className="form-label">Deduct (of 96)</label>
                                 <input
                                     className="form-input"
                                     type="number"
                                     min={0}
-                                    step={0.01}
+                                    max={96}
+                                    step={0.5}
                                     value={pasaRate}
                                     onChange={(e) => onPasaRateChange(Number(e.target.value))}
                                     style={{ height: "32px", fontSize: "0.8125rem" }}
@@ -339,9 +340,21 @@ export default function JewelleryRulesPanel({
                         <div className="summary-row" style={{ padding: "3px 0" }}>
                             <span className="label">{transactionType === "PURCHASE" ? "Pure Wt" : "Adj. Gold Wt"}</span>
                             <span className="value" style={{ color: "var(--maroon)", fontWeight: 700 }}>
-                                {formatWeight(adjustedGoldWeight)} g
+                                {formatWeight(
+                                    transactionType === "PURCHASE" && pasaRate > 0
+                                        ? calcPasaAdjustedWeight(adjustedGoldWeight, pasaRate)
+                                        : adjustedGoldWeight
+                                )} g
                             </span>
                         </div>
+                        {transactionType === "PURCHASE" && pasaRate > 0 && (
+                            <div className="summary-row" style={{ padding: "3px 0", borderBottom: "none" }}>
+                                <span className="label" style={{ color: "var(--warning)", fontSize: "0.625rem" }}>Pasa Deduct</span>
+                                <span className="value" style={{ color: "var(--warning)", fontWeight: 600, fontSize: "0.7rem" }}>
+                                    -{formatWeight(adjustedGoldWeight - calcPasaAdjustedWeight(adjustedGoldWeight, pasaRate))} g
+                                </span>
+                            </div>
+                        )}
                         <div className="summary-row" style={{ padding: "3px 0", borderBottom: "none" }}>
                             <span className="label">Est. Gross Wt</span>
                             <span className="value">{formatWeight(estimatedGrossWeight)} g</span>

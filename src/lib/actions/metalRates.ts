@@ -3,10 +3,12 @@
 import { metalRateService, MetalTypeEnum } from "@/lib/services/metalRateService";
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
+import { resolveOrgId } from "@/lib/org";
 
-export async function getActiveMetalRates(orgId: string = "org-default-001") {
+export async function getActiveMetalRates(orgId?: string) {
     try {
-        const rates = await metalRateService.getAllRates(orgId);
+        const resolvedOrgId = await resolveOrgId(orgId);
+        const rates = await metalRateService.getAllRates(resolvedOrgId);
         return { success: true, data: rates };
     } catch (error) {
         console.error("Failed to fetch active metal rates:", error);
@@ -17,40 +19,18 @@ export async function getActiveMetalRates(orgId: string = "org-default-001") {
 export async function manualUpdateMetalRate(
     metal: MetalTypeEnum,
     ratePerGram: number,
-    orgId: string = "org-default-001"
+    orgId?: string
 ) {
     try {
         if (ratePerGram <= 0) {
             return { success: false, error: "Rate must be greater than 0" };
         }
 
-        // --- STEP 4 REQUIREMENT: INTERNET FAILOVER LOGIC ---
-        // Manual entry must NEVER override API when internet is working.
-        // We ping the primary API to check its health.
-        const goldApiKey = process.env.GOLD_API_KEY || "goldapi-jkinksmluw455d-io";
-        try {
-            const goldRes = await fetch("https://www.goldapi.io/api/XAU/USD", {
-                headers: { "x-access-token": goldApiKey },
-                // Very short timeout so we don't hang the UI forever if offline
-                signal: AbortSignal.timeout(3000)
-            });
-
-            if (goldRes.ok) {
-                // API is healthy. Reject manual entry!
-                return {
-                    success: false,
-                    error: "API is active and healthy. Manual overrides are disabled. Please use 'Sync Live API Rates'."
-                };
-            }
-        } catch (apiError) {
-            // API ping failed (network error, timeout, etc). We ALLOW manual override.
-            console.log("Gold API ping failed, allowing manual override fallback.");
-        }
-        // --- END FAILOVER LOGIC ---
+        const resolvedOrgId = await resolveOrgId(orgId);
 
         // Hardcoding updatedBy to "Admin" for now since we don't have user session context here easily
         const result = await metalRateService.updateMetalRate({
-            orgId,
+            orgId: resolvedOrgId,
             metal,
             ratePerGram,
             source: "MANUAL",
@@ -71,10 +51,11 @@ export async function manualUpdateMetalRate(
     }
 }
 
-export async function getLocalPremium(orgId: string = "org-default-001") {
+export async function getLocalPremium(orgId?: string) {
     try {
+        const resolvedOrgId = await resolveOrgId(orgId);
         const org = await prisma.organization.findUnique({
-            where: { id: orgId },
+            where: { id: resolvedOrgId },
             select: { metalPremiumPercent: true }
         });
         return { success: true, data: org?.metalPremiumPercent?.toNumber() || 0 };
@@ -86,11 +67,12 @@ export async function getLocalPremium(orgId: string = "org-default-001") {
 
 export async function updateLocalPremium(
     newPremium: number,
-    orgId: string = "org-default-001"
+    orgId?: string
 ) {
     try {
+        const resolvedOrgId = await resolveOrgId(orgId);
         await prisma.organization.update({
-            where: { id: orgId },
+            where: { id: resolvedOrgId },
             data: { metalPremiumPercent: newPremium }
         });
 

@@ -15,6 +15,37 @@ type MetalRateDisplay = {
     updatedBy: string | null;
 };
 
+const GRAMS_PER_TOLA = 11.664;
+
+function displayRateFromStoredRate(metal: MetalTypeEnum, ratePerGram: number): number {
+    return metal === "DIA" ? ratePerGram : ratePerGram * GRAMS_PER_TOLA;
+}
+
+function storedRateFromDisplayRate(metal: MetalTypeEnum, displayRate: number): number {
+    return metal === "DIA" ? displayRate : displayRate / GRAMS_PER_TOLA;
+}
+
+function rateUnitLabel(metal: MetalTypeEnum): string {
+    return metal === "DIA" ? "PKR / ct" : "PKR / Tola";
+}
+
+function toNumericRate(value: unknown): number {
+    if (typeof value === "number") {
+        return value;
+    }
+
+    if (
+        typeof value === "object" &&
+        value !== null &&
+        "toNumber" in value &&
+        typeof value.toNumber === "function"
+    ) {
+        return value.toNumber();
+    }
+
+    return Number(value);
+}
+
 export default function MetalRateManager({
     initialRates,
     initialPremium
@@ -33,7 +64,7 @@ export default function MetalRateManager({
 
     const handleEditClick = (metal: MetalTypeEnum, currentRate: number) => {
         setEditingMetal(metal);
-        setNewRate(currentRate.toString());
+        setNewRate(displayRateFromStoredRate(metal, currentRate).toString());
     };
 
     const handleCancelEdit = () => {
@@ -52,11 +83,13 @@ export default function MetalRateManager({
     };
 
     const handleSave = async (metal: MetalTypeEnum) => {
-        const rateValue = parseFloat(newRate);
-        if (isNaN(rateValue) || rateValue <= 0) {
+        const displayRate = parseFloat(newRate);
+        if (isNaN(displayRate) || displayRate <= 0) {
             toast.error("Please enter a valid rate greater than 0");
             return;
         }
+
+        const rateValue = storedRateFromDisplayRate(metal, displayRate);
 
         setIsUpdating(true);
         try {
@@ -75,7 +108,7 @@ export default function MetalRateManager({
                         id: updatedData.id || `temp-${Date.now()}`,
                         orgId: updatedData.orgId || "org-default-001",
                         metal: updatedData.metal || metal,
-                        ratePerGram: (updatedData.ratePerGram as any).toNumber ? (updatedData.ratePerGram as any).toNumber() : Number(updatedData.ratePerGram),
+                        ratePerGram: toNumericRate(updatedData.ratePerGram),
                         lastUpdated: updatedData.lastUpdated || new Date(),
                         source: updatedData.source || "MANUAL",
                         updatedBy: updatedData.updatedBy || "Admin"
@@ -144,7 +177,7 @@ export default function MetalRateManager({
             } else {
                 toast.error(`Sync failed: ${data.error}`, { id: toastId });
             }
-        } catch (error) {
+        } catch {
             toast.error("Failed to connect to sync API", { id: toastId });
         } finally {
             setIsUpdating(false);
@@ -246,13 +279,19 @@ export default function MetalRateManager({
 
                                     <td className="py-4 px-4">
                                         {isEditing ? (
-                                            <input
-                                                type="number"
-                                                value={newRate}
-                                                onChange={(e) => setNewRate(e.target.value)}
-                                                className="w-32 px-3 py-1.5 border border-gray-300 rounded focus:border-maroon focus:ring-1 focus:ring-maroon outline-none"
-                                                autoFocus
-                                            />
+                                            <div>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={newRate}
+                                                    onChange={(e) => setNewRate(e.target.value)}
+                                                    className="w-32 px-3 py-1.5 border border-gray-300 rounded focus:border-maroon focus:ring-1 focus:ring-maroon outline-none"
+                                                    autoFocus
+                                                />
+                                                <div className="mt-1 text-xs text-gray-500">
+                                                    {rateUnitLabel(metalCode as MetalTypeEnum)}
+                                                </div>
+                                            </div>
                                         ) : (
                                             <span className="text-lg font-semibold text-slate-800">
                                                 {isRateFound ? `₨ ${(rateRecord.ratePerGram < 100000 ? rateRecord.ratePerGram * 11.664 : rateRecord.ratePerGram).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "Not Set"}
@@ -317,6 +356,10 @@ export default function MetalRateManager({
                 <p className="text-sm text-slate-600">
                     <strong>Note on Invoice Calculations:</strong> The rates established here are global defaults. However, when an invoice is created, the current global rate is <strong>locked</strong> into that specific invoice. If the global rate changes tomorrow, previous invoices will remain permanently unaffected to maintain ledger integrity.
                 </p>
+            </div>
+
+            <div className="mt-3 text-xs text-slate-500">
+                Manual updates are enabled. Enter gold and silver as PKR per tola here; the ERP converts them to its internal per-gram storage automatically.
             </div>
         </div>
     );

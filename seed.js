@@ -1,6 +1,25 @@
 const { PrismaClient } = require('@prisma/client')
+const { Pool } = require('pg')
+const { PrismaPg } = require('@prisma/adapter-pg')
 
-const prisma = new PrismaClient()
+if (process.loadEnvFile) {
+    try {
+        process.loadEnvFile()
+        console.log('✅ Loaded env file')
+    } catch (e) {
+        console.log('⚠️ Could not load env file:', e.message)
+    }
+}
+
+const connectionString = `${process.env.DATABASE_URL}`;
+
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+
+const prisma = new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+})
 
 // Helper for randoms
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min

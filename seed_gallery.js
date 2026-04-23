@@ -22,7 +22,7 @@ const randomDec = (min, max, precision = 3) => {
 async function main() {
     console.log('🌱 Starting Gallery Seed (Adding Image Products)...')
 
-    const ORG_ID = 'org-default-001' // Assuming default org from main seed
+    const ORG_ID = 'org-akhtar' // Assuming default org from main seed
 
     try {
         // 1. Ensure Org exists (just a check)

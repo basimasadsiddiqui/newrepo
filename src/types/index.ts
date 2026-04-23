@@ -128,6 +128,7 @@ export interface InvoiceItem {
     // Flags
     isRepairingOrder: boolean;
     isSampleGold: boolean;
+    isBulkPurchase?: boolean;
 
     // Gold Weights (grams)
     estimatedGoldWeight: number;
@@ -139,6 +140,9 @@ export interface InvoiceItem {
     stoneWeight: number;
     beadsWeight: number;
     diamondWeight: number;
+
+    // Rates
+    stoneRate?: number;        // Per-gram stone rate (PKR) — optional, stoneAmount takes precedence
 
     // Amounts (PKR)
     goldAmount: number;
@@ -278,6 +282,7 @@ export interface ItemEntryFormData {
     estimatedGoldWeight: number;
     kaatWeight?: number;
     stoneWeight: number;
+    stoneRate: number;          // Per-gram stone rate; stoneAmount = stoneRate × stoneWeight
     beadsWeight: number;
     diamondWeight: number;
     stoneAmount: number;

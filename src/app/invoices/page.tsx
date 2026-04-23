@@ -201,7 +201,7 @@ export default function InvoiceHistoryPage() {
                                         <td className="px-6 py-4 text-right">
                                             {inv.status === "DRAFT" ? (
                                                 <Link
-                                                    href={`/?id=${inv.id}`} // Assuming main page accepts ?id= param to load draft
+                                                    href={inv.transactionType === "PURCHASE" ? `/purchase?id=${inv.id}` : `/?id=${inv.id}`}
                                                     className="btn btn-sm btn-ghost text-primary hover:bg-primary/10"
                                                 >
                                                     <Edit className="w-4 h-4 mr-1" />
@@ -209,16 +209,7 @@ export default function InvoiceHistoryPage() {
                                                 </Link>
                                             ) : (
                                                 <Link
-                                                    // Need a detail page or PDF view?
-                                                    // For now, let's link to dashboard with id?? No dashboard is for editing.
-                                                    // Maybe just "Edit" implies view for Finalized if read-only logic exists.
-                                                    // Or generate PDF directly?
-                                                    // User asked for "stored somewhere". A view page is good. 
-                                                    // But I haven't implemented a VIEW-only page yet. 
-                                                    // I'll link to main page `/?id=` and ensure logic handles Finalized (read only).
-                                                    // Or I can add a dedicated view page later.
-                                                    // Let's stick to `/?id=` for now as it's the simplest way to "view" it.
-                                                    href={`/?id=${inv.id}`}
+                                                    href={inv.transactionType === "PURCHASE" ? `/purchase?id=${inv.id}` : `/?id=${inv.id}`}
                                                     className="btn btn-sm btn-ghost text-muted-foreground hover:bg-muted"
                                                 >
                                                     <Eye className="w-4 h-4 mr-1" />

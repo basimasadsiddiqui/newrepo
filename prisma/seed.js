@@ -1,7 +1,24 @@
-const { PrismaClient } = require('@prisma/client')
-const { Decimal } = require('@prisma/client/runtime/library')
+const { PrismaClient, Decimal } = require('@prisma/client')
+const { Pool } = require('pg')
+const { PrismaPg } = require('@prisma/adapter-pg')
 
-const prisma = new PrismaClient()
+if (process.loadEnvFile) {
+    try {
+        process.loadEnvFile()
+        console.log('✅ Loaded env file')
+    } catch (e) {
+        console.log('⚠️ Could not load env file:', e.message)
+    }
+}
+
+const connectionString = process.env.DATABASE_URL
+const pool = new Pool({ connectionString })
+const adapter = new PrismaPg(pool)
+
+const prisma = new PrismaClient({
+    adapter,
+    log: ['warn', 'error']
+})
 
 // Helper for randoms
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
@@ -88,16 +105,19 @@ async function main() {
     const supplierIds = []
 
     for (const p of partiesData) {
-        const rec = await prisma.party.upsert({
-            where: { orgId_name: { orgId: org.id, name: p.name } },
-            update: {},
-            create: {
-                orgId: org.id,
-                name: p.name,
-                type: p.type,
-                mobile: `0300-${randomInt(1000000, 9999999)}`,
-            },
+        let rec = await prisma.party.findFirst({
+            where: { orgId: org.id, name: p.name }
         })
+        if (!rec) {
+            rec = await prisma.party.create({
+                data: {
+                    orgId: org.id,
+                    name: p.name,
+                    type: p.type,
+                    mobile: `0300-${randomInt(1000000, 9999999)}`,
+                },
+            })
+        }
         if (['Supplier', 'Both'].includes(p.type)) {
             supplierIds.push(rec.id)
         }

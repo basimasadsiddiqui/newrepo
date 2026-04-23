@@ -37,6 +37,8 @@ import { generateInvoicePdf } from "@/lib/pdfGenerator";
 import InvoiceHeader from "@/components/invoice/InvoiceHeader";
 import ItemEntryForm from "@/components/invoice/ItemEntryForm";
 import JewelleryRulesPanel from "@/components/invoice/JewelleryRulesPanel";
+import BulkAddModal from "@/components/invoice/BulkAddModal";
+import BulkEntryPanel, { type BulkRow } from "@/components/invoice/BulkEntryPanel";
 import ItemGrid from "@/components/invoice/ItemGrid";
 import InvoiceSummary from "@/components/invoice/InvoiceSummary";
 import PhotoSystem from "@/components/invoice/PhotoSystem";
@@ -81,6 +83,7 @@ const DEFAULT_ITEM_FORM: ItemEntryFormData = {
   isSampleGold: false,
   estimatedGoldWeight: 0,
   stoneWeight: 0,
+  stoneRate: 0,
   beadsWeight: 0,
   diamondWeight: 0,
   stoneAmount: 0,
@@ -90,9 +93,37 @@ const DEFAULT_ITEM_FORM: ItemEntryFormData = {
   metalTypeId: null,
 };
 
+const DRAFT_ITEMS_STORAGE_KEY = "draft_invoice_items";
+
 let itemCounter = 0;
 function generateItemId(): string {
   return `item-${Date.now()}-${++itemCounter}`;
+}
+
+function isInlineImage(imageUrl: string | null | undefined): boolean {
+  return typeof imageUrl === "string" && imageUrl.startsWith("data:");
+}
+
+function createPersistedDraftItems(
+  items: InvoiceItem[],
+  options?: { stripAllImages?: boolean; stripDiamondEntries?: boolean }
+): InvoiceItem[] {
+  return items.map((item) => ({
+    ...item,
+    imageUrl:
+      options?.stripAllImages || isInlineImage(item.imageUrl)
+        ? null
+        : item.imageUrl,
+    diamondEntries: options?.stripDiamondEntries ? undefined : item.diamondEntries,
+  }));
+}
+
+function isStorageQuotaError(error: unknown): boolean {
+  return error instanceof DOMException &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -102,9 +133,11 @@ function generateItemId(): string {
 interface InvoiceMainProps {
   defaultTransactionType: TransactionType;
   hideToggle?: boolean;
+  /** When true, all added items are flagged isBulkPurchase and bulk modal auto-opens on load */
+  isBulkMode?: boolean;
 }
 
-export default function InvoiceMain({ defaultTransactionType, hideToggle = false }: InvoiceMainProps) {
+export default function InvoiceMain({ defaultTransactionType, hideToggle = false, isBulkMode = false }: InvoiceMainProps) {
   // ── API Data ──
   const [categories, setCategories] = useState<Category[]>([]);
   const [metalTypes, setMetalTypes] = useState<MetalTypeOption[]>([]);
@@ -115,6 +148,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const typeParam = searchParams.get("type");
   const stockItemIdParam = searchParams.get("stockItemId");
   const autoAddStockParam = searchParams.get("autoAdd");
+  const invoiceIdParam = searchParams.get("id");
 
   // ── Invoice Header ──
   const [orderNumber] = useState<number>(0);
@@ -150,7 +184,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const [polishRate, setPolishRate] = useState<number>(2.0);
   const [labourBasis, setLabourBasis] = useState<LabourBasis>("Per Tola");
   const [labourRate, setLabourRate] = useState<number>(1200.0);
-  const [kaatBasis, setKaatBasis] = useState<KaatBasis>("Direct Weight");
+  const [kaatBasis, setKaatBasis] = useState<KaatBasis>("Ratti Kaat");
   const [kaatRate, setKaatRate] = useState<number>(0);
 
   // ── Purchase Invoice Specific ──
@@ -176,30 +210,158 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const [imageTargetIndex, setImageTargetIndex] = useState<number | null>(null);
   const itemImageInputRef = useRef<HTMLInputElement>(null);
   const stockItemPrefillRef = useRef<string | null>(null);
+  const draftStorageWarningShownRef = useRef<boolean>(false);
 
   // ── Diamond Dialog ──
   const [isDiamondDialogOpen, setIsDiamondDialogOpen] = useState<boolean>(false);
   const [diamondEntries, setDiamondEntries] = useState<DiamondEntry[]>([]);
   const [shouldAutoAdd, setShouldAutoAdd] = useState<boolean>(false);
 
-  // Load from local storage on mount
+  // ── Bulk Add Modal (Purchase) — only for re-categorize flow ──
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
+  // null = new bulk; number = index of item being re-categorised (replace mode)
+  const [categorizingItemIndex, setCategorizingItemIndex] = useState<number | null>(null);
+
+  // Load from localStorage OR from DB (when ?id= param is present)
   useEffect(() => {
-    try {
-      const savedItems = localStorage.getItem('draft_invoice_items');
-      if (savedItems) {
-        setItems(JSON.parse(savedItems));
+    if (invoiceIdParam) {
+      // ── Load existing invoice from DB ──
+      (async () => {
+        try {
+          const res = await fetch(`/api/invoices/${invoiceIdParam}`);
+          const json = await res.json();
+          if (!json.success || !json.data) {
+            toast.error("Invoice not found");
+            setHasHydrated(true);
+            return;
+          }
+          const inv = json.data;
+          // Populate header fields
+          setInvoiceId(inv.id);
+          setDate(inv.date ? new Date(inv.date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+          setReceiptNo(inv.receiptNo || "");
+          setRateType(inv.rateType || "FIXED");
+          setDueDate(inv.dueDate ? new Date(inv.dueDate).toISOString().split("T")[0] : "");
+          setStatus(inv.status || "DRAFT");
+          setTransactionType(inv.transactionType || defaultTransactionType);
+          // Party
+          setPartyId(inv.partyId || "");
+          setPartyName(inv.partyName || "");
+          setPartyMobile(inv.partyMobile || "");
+          // Rates & rules
+          setGoldRate(Number(inv.goldRate) || 0);
+          setPolishBasis((inv.polishBasis as import("@/lib/calculationEngine").PolishLabourBasis) || "Per Tola");
+          setPolishRate(Number(inv.polishRate) || 2.0);
+          setLabourBasis((inv.labourBasis as import("@/lib/calculationEngine").LabourBasis) || "Per Tola");
+          setLabourRate(Number(inv.labourRate) || 1200);
+          setKaatBasis((inv.kaatBasis as import("@/lib/calculationEngine").KaatBasis) || "Direct Weight");
+          setKaatRate(Number(inv.kaatRate) || 0);
+          // Purchase-specific
+          setSupplierInvoiceNo(inv.supplierInvoiceNo || "");
+          setCurrency(inv.currency || "PKR");
+          setCurrencyRate(Number(inv.currencyRate) || 1);
+          setIntlOunceRate(Number(inv.intlOunceRate) || 0);
+          // Party gold & pasa
+          setPartyGoldWeight(Number(inv.customerGoldWeight) || 0);
+          setPartyGoldCarat(Number(inv.customerGoldCarat) || 24);
+          setPasaRate(Number(inv.pasaRate) || 0);
+          // Summary fields
+          setOtherCharges(Number(inv.otherCharges) || 0);
+          setDiscount(Number(inv.discount) || 0);
+          setCashReceived(Number(inv.cashReceived) || 0);
+          setGoldReceived(Number(inv.goldReceived) || 0);
+          setRemarks(inv.remarks || "");
+          setPhotos(Array.isArray(inv.photos) ? (inv.photos as string[]) : []);
+          // Line items
+          const mapped: import("@/types").InvoiceItem[] = (inv.items || []).map((item: Record<string, unknown>, i: number) => ({
+            id: generateItemId(),
+            sortOrder: (item.sortOrder as number) ?? i,
+            categoryId: (item.categoryId as string) || "",
+            categoryName: ((item.category as { name?: string } | null)?.name) || "",
+            description: (item.description as string) || "",
+            pieces: (item.pieces as number) || 1,
+            carat: (item.carat as number) || 24,
+            size: (item.size as string) || "",
+            isRepairingOrder: Boolean(item.isRepairingOrder),
+            isSampleGold: Boolean(item.isSampleGold),
+            isBulkPurchase: Boolean(item.isBulkPurchase),
+            estimatedGoldWeight: Number(item.estimatedGoldWeight) || 0,
+            adjustedGoldWeight: Number(item.adjustedGoldWeight) || 0,
+            estimatedGrossWeight: Number(item.estimatedGrossWeight) || 0,
+            stoneWeight: Number(item.stoneWeight) || 0,
+            stoneRate: Number(item.stoneRate) || 0,
+            beadsWeight: Number(item.beadsWeight) || 0,
+            diamondWeight: Number(item.diamondWeight) || 0,
+            goldAmount: Number(item.goldAmount) || 0,
+            stoneAmount: Number(item.stoneAmount) || 0,
+            beadsAmount: Number(item.beadsAmount) || 0,
+            diamondAmount: Number(item.diamondAmount) || 0,
+            polishAmount: Number(item.polishAmount) || 0,
+            labourAmount: Number(item.labourAmount) || 0,
+            totalAmount: Number(item.totalAmount) || 0,
+            imageUrl: (item.imageUrl as string) || null,
+            inventoryItemId: (item.inventoryItemId as string) || null,
+            metalTypeId: null,
+          }));
+          setItems(mapped);
+        } catch (err) {
+          console.error("Failed to load invoice:", err);
+          toast.error("Failed to load invoice");
+        } finally {
+          setHasHydrated(true);
+        }
+      })();
+    } else {
+      // ── Load from localStorage (new invoice / local draft) ──
+      try {
+        const savedItems = localStorage.getItem(DRAFT_ITEMS_STORAGE_KEY);
+        if (savedItems) {
+          setItems(JSON.parse(savedItems));
+        }
+      } catch (e) {
+        console.error("Failed to parse draft items from local storage", e);
+      } finally {
+        setHasHydrated(true);
       }
-    } catch (e) {
-      console.error("Failed to parse draft items from local storage", e);
-    } finally {
-      setHasHydrated(true);
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceIdParam]);
 
   // Save to local storage when items change (after hydration)
   useEffect(() => {
-    if (hasHydrated) {
-      localStorage.setItem('draft_invoice_items', JSON.stringify(items));
+    if (!hasHydrated) {
+      return;
+    }
+
+    try {
+      const persistedItems = createPersistedDraftItems(items);
+      localStorage.setItem(DRAFT_ITEMS_STORAGE_KEY, JSON.stringify(persistedItems));
+      draftStorageWarningShownRef.current = false;
+    } catch (error) {
+      console.error("Failed to persist draft invoice items", error);
+
+      try {
+        const minimalDraftItems = createPersistedDraftItems(items, {
+          stripAllImages: true,
+          stripDiamondEntries: true,
+        });
+        localStorage.setItem(DRAFT_ITEMS_STORAGE_KEY, JSON.stringify(minimalDraftItems));
+
+        if (!draftStorageWarningShownRef.current) {
+          toast.error("Draft images/details were skipped to fit browser storage");
+          draftStorageWarningShownRef.current = true;
+        }
+      } catch (fallbackError) {
+        console.error("Failed to persist reduced draft invoice items", fallbackError);
+
+        if (
+          (isStorageQuotaError(error) || isStorageQuotaError(fallbackError)) &&
+          !draftStorageWarningShownRef.current
+        ) {
+          toast.error("Browser draft storage is full. Save the invoice draft to keep everything.");
+          draftStorageWarningShownRef.current = true;
+        }
+      }
     }
   }, [items, hasHydrated]);
 
@@ -218,6 +380,19 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   // ═══════════════════════════════════════════════════════════════
 
   const goldRatePerGram = useMemo(() => goldRateToPerGram(goldRate), [goldRate]);
+
+  // Auto-generate receipt number for new invoices
+  useEffect(() => {
+    if (invoiceIdParam || receiptNo) return; // Don't overwrite loaded or manually set
+    const txType = isBulkMode ? "BULK" : defaultTransactionType;
+    fetch(`/api/invoices/next-receipt?type=${txType}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { receiptNo?: string } | null) => {
+        if (data?.receiptNo) setReceiptNo(data.receiptNo);
+      })
+      .catch(() => { /* non-fatal */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch Categories & Gold Rate on Mount
   useEffect(() => {
@@ -669,6 +844,11 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         return;
       }
 
+      // If stone rate provided, compute stoneAmount from rate × weight
+      const effectiveStoneAmount = itemForm.stoneRate > 0 && itemForm.stoneWeight > 0
+        ? itemForm.stoneRate * itemForm.stoneWeight
+        : itemForm.stoneAmount;
+
       const calc = calculateLineItem({
         transactionType,
         estimatedGoldWeight: itemForm.estimatedGoldWeight,
@@ -683,7 +863,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         stoneWeight: itemForm.stoneWeight,
         beadsWeight: itemForm.beadsWeight,
         diamondWeight: itemForm.diamondWeight,
-        stoneAmount: itemForm.stoneAmount,
+        stoneAmount: effectiveStoneAmount,
         beadsAmount: itemForm.beadsAmount,
         diamondAmount: itemForm.diamondAmount,
       });
@@ -704,10 +884,11 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         kaatWeight: calc.kaatWeight,
         estimatedGrossWeight: calc.estimatedGrossWeight,
         stoneWeight: itemForm.stoneWeight,
+        stoneRate: itemForm.stoneRate || 0,
         beadsWeight: itemForm.beadsWeight,
         diamondWeight: itemForm.diamondWeight,
         goldAmount: calc.goldAmount,
-        stoneAmount: itemForm.stoneAmount,
+        stoneAmount: effectiveStoneAmount,
         beadsAmount: itemForm.beadsAmount,
         diamondAmount: itemForm.diamondAmount,
         diamondEntries: diamondEntries.length > 0 ? diamondEntries : undefined,
@@ -763,6 +944,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       isSampleGold: item.isSampleGold,
       estimatedGoldWeight: item.estimatedGoldWeight,
       stoneWeight: item.stoneWeight,
+      stoneRate: item.stoneRate || 0,
       beadsWeight: item.beadsWeight,
       diamondWeight: item.diamondWeight,
       stoneAmount: item.stoneAmount,
@@ -863,7 +1045,6 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         categoryId: item.categoryId,
         description: item.description,
         pieces: item.pieces,
-        // DB schema currently expects Int for carat.
         carat: Math.round(item.carat),
         size: item.size,
         isRepairingOrder: item.isRepairingOrder,
@@ -871,6 +1052,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         estimatedGoldWeight: item.estimatedGoldWeight,
         kaatWeight: item.kaatWeight,
         stoneWeight: item.stoneWeight,
+        stoneRate: item.stoneRate || 0,
         beadsWeight: item.beadsWeight,
         diamondWeight: item.diamondWeight,
         stoneAmount: item.stoneAmount,
@@ -885,12 +1067,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     };
   }, [receiptNo, date, dueDate, rateType, transactionType, partyId, partyName, partyMobile, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, supplierInvoiceNo, currency, currencyRate, intlOunceRate, partyGoldWeight, partyGoldCarat, pasaRate, otherCharges, discount, cashReceived, goldReceived, remarks, items, photos]);
 
-  const handleSaveDraft = useCallback(async () => {
-    if (transactionType === "PURCHASE" && !date) {
-      toast.error("Purchase Date is required");
-      return;
-    }
-
+  // ── Core save-to-DB helper (returns saved invoice ID, does NOT clear local state) ──
+  const saveToDb = useCallback(async (opts?: { silent?: boolean }): Promise<string | null> => {
     setIsLoading(true);
     try {
       const payload = prepareInvoicePayload();
@@ -905,7 +1083,6 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
 
       if (!res.ok) {
         const text = await res.text();
-        console.error("Save API Error Body:", text);
         try {
           const err = JSON.parse(text);
           throw new Error(err.error || "Failed to save");
@@ -914,27 +1091,35 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         }
       }
       const data = await res.json();
-      console.log("Draft saved response:", data);
+      const savedId: string | undefined = data.data?.id;
 
-      if (data.data?.id) {
-        setInvoiceId(data.data.id);
-
-        // Clear draft items and trigger hydration check to prevent re-saving stale items
-        localStorage.removeItem('draft_invoice_items');
-        setItems([]);
-
-        toast.success(invoiceId ? "Invoice updated" : "Draft saved");
-      } else {
-        console.error("No ID returned in save response data:", data);
-        toast.error("Saved but failed to retrieve ID");
+      if (savedId) {
+        setInvoiceId(savedId);
+        if (!opts?.silent) toast.success(invoiceId ? "Invoice updated" : "Draft saved");
+        return savedId;
       }
+      // PUT may not return an id — return the existing one
+      return invoiceId;
     } catch (error) {
       console.error(error);
-      toast.error("Failed to save draft");
+      if (!opts?.silent) toast.error("Failed to save");
+      return null;
     } finally {
       setIsLoading(false);
     }
   }, [invoiceId, prepareInvoicePayload]);
+
+  const handleSaveDraft = useCallback(async () => {
+    if (transactionType === "PURCHASE" && !date) {
+      toast.error("Purchase Date is required");
+      return;
+    }
+    const savedId = await saveToDb();
+    if (savedId) {
+      localStorage.removeItem(DRAFT_ITEMS_STORAGE_KEY);
+      setItems([]);
+    }
+  }, [transactionType, date, saveToDb]);
 
   const handleFinalize = useCallback(async () => {
     console.log("handleFinalize called. Items:", items.length, "InvoiceId:", invoiceId);
@@ -945,17 +1130,22 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     }
 
     if (items.length === 0) {
-      console.warn("No items to finalize");
       toast.error("Add at least one item");
       return;
     }
-    if (!invoiceId) {
-      console.warn("No invoiceId, asking to save draft");
-      toast.error("Please save draft first");
-      return;
+
+    // Auto-save to DB if not yet saved
+    let effectiveInvoiceId = invoiceId;
+    if (!effectiveInvoiceId) {
+      toast("Saving invoice…", { icon: "💾" });
+      effectiveInvoiceId = await saveToDb({ silent: true });
+      if (!effectiveInvoiceId) {
+        toast.error("Could not save invoice — finalize aborted");
+        return;
+      }
     }
 
-    // --- NEW: RISK VALIDATION CHECK ---
+    // --- RISK VALIDATION CHECK ---
     const finalBalance = Number(invoiceSummary.balance);
     if (partyRisk && partyRisk.level === "HIGH" && finalBalance > 0) {
       const riskScore = partyRisk?.score ?? 0;
@@ -968,17 +1158,14 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         `Average Delay: ${avgDelayDays.toFixed(1)} days\n\n` +
         `Are you sure you want to finalize this invoice and extend ${finalBalance} more credit?`
       );
-      if (!confirmCredit) {
-        return;
-      }
+      if (!confirmCredit) return;
     }
 
     toast("Starting finalization...", { icon: "🚀" });
 
     setIsLoading(true);
     try {
-      console.log("Sending POST request to:", `/api/invoices/${invoiceId}/finalize`);
-      const res = await fetch(`/api/invoices/${invoiceId}/finalize`, {
+      const res = await fetch(`/api/invoices/${effectiveInvoiceId}/finalize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1005,7 +1192,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       console.log("Finalize Success");
 
       setStatus("FINALIZED");
-      localStorage.removeItem("draft_invoice_items");
+      localStorage.removeItem(DRAFT_ITEMS_STORAGE_KEY);
       toast.success("Invoice finalized successfully! 🎉");
 
       // Reset form after short delay
@@ -1031,37 +1218,125 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     } finally {
       setIsLoading(false);
     }
-  }, [items, invoiceId, invoiceSummary.balance, partyRisk]);
+  }, [items, invoiceId, invoiceSummary.balance, partyRisk, saveToDb]);
 
-  const handleGeneratePdf = useCallback(() => {
-    generateInvoicePdf({
-      orderNumber,
-      date,
-      receiptNo,
-      transactionType,
-      partyName,
-      partyMobile,
-      items,
-      totalGoldWeight: invoiceSummary.totalGoldWeight,
-      totalAmount: invoiceSummary.totalAmount,
-      otherCharges,
-      discount,
-      partyGoldValue,
-      pasaDeduction,
-      cashReceived,
-      goldReceived,
-      balance: invoiceSummary.balance,
-      remarks,
-      goldRate,
-      polishBasis,
-      polishRate: polishRate,
-      labourBasis,
-      labourRate: labourRate,
-      kaatBasis,
-      kaatRate,
+  const handleBulkAdd = useCallback((rows: BulkRow[]) => {
+    const newItems = rows
+      .filter(r => r.estimatedGoldWeight > 0 || r.description.trim())
+      .map((r, i) => {
+        // Force isBulkPurchase=true in bulk mode
+        const calc = calculateLineItem({
+          transactionType,
+          estimatedGoldWeight: r.estimatedGoldWeight,
+          carat: r.carat,
+          goldRatePerGram,
+          polishRate, polishBasis,
+          labourRate, labourBasis,
+          kaatBasis, kaatRate,
+          stoneWeight: r.stoneWeight,
+          beadsWeight: 0, diamondWeight: 0,
+          stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
+        });
+        const cat = categories.find(c => c.id === r.categoryId);
+        return {
+          id: generateItemId(),
+          sortOrder: items.length + i,
+          categoryId: r.categoryId,
+          categoryName: cat?.name || "",
+          description: r.description,
+          pieces: r.pieces,
+          carat: r.carat,
+          size: "",
+          isRepairingOrder: false,
+          isSampleGold: false,
+          isBulkPurchase: isBulkMode ? true : (r.isBulkPurchase ?? false),
+          estimatedGoldWeight: r.estimatedGoldWeight,
+          adjustedGoldWeight: calc.adjustedGoldWeight,
+          estimatedGrossWeight: calc.estimatedGrossWeight,
+          stoneWeight: r.stoneWeight,
+          beadsWeight: 0,
+          diamondWeight: 0,
+          goldAmount: calc.goldAmount,
+          stoneAmount: 0,
+          beadsAmount: 0,
+          diamondAmount: 0,
+          polishAmount: calc.polishAmount,
+          labourAmount: calc.labourAmount,
+          totalAmount: calc.totalAmount,
+          imageUrl: null,
+          inventoryItemId: null,
+          metalTypeId: null,
+        } satisfies import("@/types").InvoiceItem;
+      });
+
+    setItems(prev => {
+      if (categorizingItemIndex !== null) {
+        // Replace the bulk item with the categorised items
+        const next = [...prev];
+        next.splice(categorizingItemIndex, 1, ...newItems);
+        return next.map((item, i) => ({ ...item, sortOrder: i }));
+      }
+      return [...prev, ...newItems];
     });
-    toast.success("PDF downloaded!");
-  }, [orderNumber, date, receiptNo, transactionType, partyName, partyMobile, items, invoiceSummary, otherCharges, discount, partyGoldValue, pasaDeduction, cashReceived, goldReceived, remarks, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate]);
+    setCategorizingItemIndex(null);
+    const verb = categorizingItemIndex !== null ? "categorised" : "added";
+    toast.success(`${newItems.length} item${newItems.length !== 1 ? "s" : ""} ${verb}`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactionType, goldRatePerGram, polishRate, polishBasis, labourRate, labourBasis, kaatBasis, kaatRate, categories, items.length, categorizingItemIndex]);
+
+  const handleCategorize = useCallback((index: number) => {
+    setCategorizingItemIndex(index);
+    setIsBulkModalOpen(true);
+  }, []);
+
+  const handleGeneratePdf = useCallback(async () => {
+    // Auto-save to DB so the invoice is always stored before printing
+    if (items.length > 0) {
+      await saveToDb({ silent: true });
+    }
+
+    // Read column visibility from localStorage so hidden columns stay out of the PDF
+    let visibleColumns: Record<string, boolean> = {};
+    try {
+      const raw = localStorage.getItem("invoice_grid_visible_columns_v2");
+      if (raw) visibleColumns = JSON.parse(raw) as Record<string, boolean>;
+    } catch { /* use defaults */ }
+
+    try {
+      await generateInvoicePdf({
+        orderNumber,
+        date,
+        receiptNo,
+        transactionType,
+        partyName,
+        partyMobile,
+        items,
+        totalGoldWeight: invoiceSummary.totalGoldWeight,
+        totalAmount: invoiceSummary.totalAmount,
+        otherCharges,
+        discount,
+        partyGoldValue,
+        pasaDeduction,
+        cashReceived,
+        goldReceived,
+        balance: invoiceSummary.balance,
+        remarks,
+        goldRate,
+        polishBasis,
+        polishRate,
+        labourBasis,
+        labourRate,
+        kaatBasis,
+        kaatRate,
+        photos,
+        visibleColumns,
+      });
+      toast.success("PDF downloaded!");
+    } catch (err) {
+      console.error('InvoiceMain: PDF generation error', err);
+      toast.error('PDF generation failed — check console');
+    }
+  }, [orderNumber, date, receiptNo, transactionType, partyName, partyMobile, items, invoiceSummary, otherCharges, discount, partyGoldValue, pasaDeduction, cashReceived, goldReceived, remarks, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, photos, saveToDb]);
   const handleSendWhatsApp = useCallback(() => { toast("WhatsApp — requires API key", { icon: "💬" }); }, []);
   const handleCancelOrder = useCallback(() => { setStatus("CANCELLED"); toast.error("Invoice cancelled"); }, []);
 
@@ -1127,19 +1402,37 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           alignItems: "start",
         }}
       >
-        <ItemEntryForm
-          categories={categories}
-          metalTypes={metalTypes}
-          goldRate={goldRate}
-          formData={itemForm}
-          isEditing={editingItemIndex !== null}
-          transactionType={transactionType}
-          kaatWeightPreview={currentItemCalc?.kaatWeight || 0}
-          pureWeightPreview={currentItemCalc?.adjustedGoldWeight || 0}
-          onFormChange={handleItemFormChange}
-          onAddItem={handleAddItem}
-          onReset={handleResetItemForm}
-        />
+        {isBulkMode ? (
+          <BulkEntryPanel
+            onConfirm={handleBulkAdd}
+            onSaveDraft={handleSaveDraft}
+            onGeneratePdf={handleGeneratePdf}
+            categories={categories}
+            goldRate={goldRate}
+            polishBasis={polishBasis}
+            polishRate={polishRate}
+            labourBasis={labourBasis}
+            labourRate={labourRate}
+            kaatBasis={kaatBasis}
+            kaatRate={kaatRate}
+          />
+        ) : (
+          <ItemEntryForm
+            categories={categories}
+            metalTypes={metalTypes}
+            goldRate={goldRate}
+            formData={itemForm}
+            isEditing={editingItemIndex !== null}
+            transactionType={transactionType}
+            kaatWeightPreview={currentItemCalc?.kaatWeight || 0}
+            pureWeightPreview={currentItemCalc?.adjustedGoldWeight || 0}
+            onFormChange={handleItemFormChange}
+            onAddItem={handleAddItem}
+            onReset={handleResetItemForm}
+            onBulkPurchase={() => setIsBulkModalOpen(true)}
+            onGoldRateChange={transactionType === "PURCHASE" ? setGoldRate : undefined}
+          />
+        )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <JewelleryRulesPanel
@@ -1190,6 +1483,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         onEditItem={handleEditItem}
         onDeleteItem={handleDeleteItem}
         onImageUpload={handleImageUpload}
+        onCategorize={transactionType === "PURCHASE" ? handleCategorize : undefined}
       />
 
       {/* ── Row 4: Invoice Summary (full width) ── */}
@@ -1224,6 +1518,27 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         onPayment={() => {
           window.open("/payments", "_blank");
         }}
+      />
+
+      {/* ── Bulk Add Modal (re-categorize existing bulk items only) ── */}
+      <BulkAddModal
+        isOpen={isBulkModalOpen && categorizingItemIndex !== null}
+        onClose={() => { setIsBulkModalOpen(false); setCategorizingItemIndex(null); }}
+        onConfirm={handleBulkAdd}
+        onSaveDraft={handleSaveDraft}
+        onGeneratePdf={handleGeneratePdf}
+        categories={categories}
+        goldRate={goldRate}
+        polishBasis={polishBasis}
+        polishRate={polishRate}
+        labourBasis={labourBasis}
+        labourRate={labourRate}
+        kaatBasis={kaatBasis}
+        kaatRate={kaatRate}
+        initialMode="categorize"
+        initialWeight={categorizingItemIndex !== null ? items[categorizingItemIndex]?.estimatedGoldWeight : undefined}
+        initialCarat={categorizingItemIndex !== null ? items[categorizingItemIndex]?.carat : undefined}
+        categorizeTitle={categorizingItemIndex !== null ? `Categorise: ${items[categorizingItemIndex]?.description || "Bulk Item"}` : undefined}
       />
 
       {/* ── Diamond Details Dialog ── */}

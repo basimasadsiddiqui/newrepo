@@ -1,15 +1,14 @@
 import { Metadata } from "next";
 import { getActiveMetalRates, getLocalPremium } from "@/lib/actions/metalRates";
 import MetalRateManager from "@/components/admin/MetalRateManager";
-import Sidebar from "@/components/layout/Sidebar";
+import GemstoneRatesManager from "@/components/settings/GemstoneRatesManager";
 
 export const metadata: Metadata = {
-    title: "Metal Rates | Akhtar Jewellers ERP",
-    description: "Manage daily metal rates for the ERP system.",
+    title: "Settings | Akhtar Jewellers ERP",
+    description: "Manage global configurations for the ERP.",
 };
 
 export default async function RatesSettingsPage() {
-    // 1. Fetch initial server-side data
     const [rateRes, premiumRes] = await Promise.all([
         getActiveMetalRates(),
         getLocalPremium()
@@ -19,24 +18,35 @@ export default async function RatesSettingsPage() {
     const initialPremium = premiumRes.success && premiumRes.data ? premiumRes.data : 0;
 
     return (
-        <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
-            {/* Sidebar matches the rest of the application */}
-            <Sidebar />
-
-            <main className="flex-1 flex flex-col h-screen overflow-y-auto">
-                <div className="p-8">
-                    <div className="mb-6 border-b border-gray-200 pb-4">
-                        <h1 className="text-3xl font-extrabold text-maroon tracking-tight">System Settings</h1>
-                        <p className="text-gray-500 mt-2">Manage global configurations for the ERP.</p>
-                    </div>
-
-                    {/* Rendering the Client Component with Server data */}
-                    <MetalRateManager
-                        initialRates={initialRates}
-                        initialPremium={initialPremium}
-                    />
+        <main className="app-content">
+            {/* ── Page header ── */}
+            <div style={{
+                marginBottom: 20,
+                paddingBottom: 14,
+                borderBottom: "1px solid var(--border)",
+                display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+            }}>
+                <div>
+                    <h1 style={{ fontSize: "1.125rem", fontWeight: 800, color: "var(--maroon)", margin: 0 }}>
+                        System Settings
+                    </h1>
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "2px 0 0", fontWeight: 500 }}>
+                        Manage global rates and configurations for the ERP.
+                    </p>
                 </div>
-            </main>
-        </div>
+            </div>
+
+            {/* ── Metal Rates ── */}
+            <MetalRateManager
+                initialRates={initialRates}
+                initialPremium={initialPremium}
+            />
+
+            {/* ── Divider ── */}
+            <div style={{ height: 1, background: "var(--border)", margin: "24px 0" }} />
+
+            {/* ── Gemstone Rates ── */}
+            <GemstoneRatesManager />
+        </main>
     );
 }

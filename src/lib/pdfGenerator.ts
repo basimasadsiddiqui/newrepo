@@ -1,16 +1,3 @@
-/**
- * ============================================================================
- * PDF Invoice Generator – Akhtar Jewellers
- * ============================================================================
- *
- * Generates a professional invoice PDF using jsPDF + jspdf-autotable.
- *
- * Usage:
- *   import { generateInvoicePdf } from "@/lib/pdfGenerator";
- *   generateInvoicePdf(invoiceData);
- * ============================================================================
- */
-
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { InvoiceItem } from "@/types";
@@ -40,206 +27,441 @@ interface PdfInvoiceData {
     labourRate: number;
     kaatBasis?: string;
     kaatRate?: number;
+    photos?: string[];
+    visibleColumns?: Record<string, boolean>;
 }
 
-/**
- * Format a number to the standard PKR display format.
- */
-function formatPkr(amount: number): string {
-    return `Rs. ${amount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+// ── colour palette ────────────────────────────────────────────────────────────
+const C = {
+    maroon:    [120, 20,  20 ] as [number,number,number],
+    maroonDk:  [90,  10,  10 ] as [number,number,number],
+    gold:      [200, 165, 90 ] as [number,number,number],
+    goldLight: [245, 235, 210] as [number,number,number],
+    cream:     [253, 249, 242] as [number,number,number],
+    white:     [255, 255, 255] as [number,number,number],
+    text:      [30,  30,  30 ] as [number,number,number],
+    textMid:   [80,  80,  80 ] as [number,number,number],
+    textLight: [140, 140, 140] as [number,number,number],
+};
+
+function fmtNum(amount: number): string {
+    if (amount === 0) return "—";
+    return amount.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-/**
- * Format grams for display.
- */
-function formatGrams(weight: number): string {
-    return `${weight.toFixed(3)} g`;
+function fmtG(weight: number): string {
+    if (weight === 0) return "—";
+    return weight.toFixed(3);
 }
 
-/**
- * Generate and download an invoice PDF.
- */
-export function generateInvoicePdf(data: PdfInvoiceData): void {
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 14;
-    let y = margin;
+function imgFmt(dataUri: string): "JPEG" | "PNG" {
+    return /data:image\/png/i.test(dataUri) ? "PNG" : "JPEG";
+}
 
-    // ── Header ──
+// ── column definitions ────────────────────────────────────────────────────────
+type ColDef = {
+    key: string;
+    header: string;
+    dataKey: string;
+    baseW: number;                 // nominal mm
+    align: "left" | "center" | "right";
+    purchaseOnly?: true;
+    saleOnly?: true;
+    bold?: true;
+};
+
+const ALL_COLS: ColDef[] = [
+    { key: "sno",        header: "#",         dataKey: "sno",        baseW: 6,  align: "center" },
+    { key: "description",header: "Description",dataKey: "category",  baseW: 0,  align: "left"   }, // flexible
+    { key: "pieces",     header: "Pcs",        dataKey: "pcs",        baseW: 8,  align: "center" },
+    { key: "carat",      header: "Ct",         dataKey: "carat",      baseW: 8,  align: "center" },
+    { key: "goldWt",     header: "Gold Wt\ng", dataKey: "goldWt",     baseW: 16, align: "right"  },
+    { key: "kaatWt",     header: "Kaat\ng",    dataKey: "kaatWt",     baseW: 14, align: "right",  purchaseOnly: true },
+    { key: "pureWt",     header: "Pure\ng",    dataKey: "pureWt",     baseW: 14, align: "right",  purchaseOnly: true },
+    { key: "stoneWt",    header: "Stone\ng",   dataKey: "stoneWt",    baseW: 14, align: "right"  },
+    { key: "beadsWt",    header: "Beads\ng",   dataKey: "beadsWt",    baseW: 14, align: "right"  },
+    { key: "diamondWt",  header: "Dmnd\ng",    dataKey: "diamondWt",  baseW: 14, align: "right"  },
+    { key: "goldAmt",    header: "Gold Amt",   dataKey: "goldAmt",    baseW: 20, align: "right"  },
+    { key: "stoneAmt",   header: "Stone",      dataKey: "stoneAmt",   baseW: 17, align: "right"  },
+    { key: "beadsAmt",   header: "Beads",      dataKey: "beadsAmt",   baseW: 17, align: "right"  },
+    { key: "diamondAmt", header: "Dmnd",       dataKey: "diamondAmt", baseW: 17, align: "right"  },
+    { key: "polishAmt",  header: "Polish",     dataKey: "polishAmt",  baseW: 16, align: "right",  saleOnly: true },
+    { key: "labourAmt",  header: "Labour",     dataKey: "labourAmt",  baseW: 16, align: "right"  },
+    { key: "total",      header: "Total",      dataKey: "total",      baseW: 20, align: "right",  bold: true },
+];
+
+export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
+    const doc  = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();   // 210
+    const pageH = doc.internal.pageSize.getHeight();  // 297
+    const M     = 12;                                  // margin
+    const CW    = pageW - M * 2;                       // 186 mm usable
+
+    const isSale    = data.transactionType === "SALE";
+    const isPurchase = !isSale;
+    let y = M;
+
+    // ── helper: safe new-page check ──────────────────────────────────────────
+    const ensureSpace = (need: number) => {
+        if (y + need > pageH - 18) {
+            doc.addPage();
+            y = M;
+        }
+    };
+
+    // ════════════════════════════════════════════════════════════════════════
+    // HEADER BANNER
+    // ════════════════════════════════════════════════════════════════════════
+    doc.setFillColor(...C.maroon);
+    doc.roundedRect(M, y, CW, 26, 3, 3, "F");
+
+    // shop name
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(102, 0, 0); // Maroon
-    doc.text("AKHTAR JEWELLERS", pageWidth / 2, y, { align: "center" });
-    y += 7;
+    doc.setTextColor(...C.white);
+    doc.text("AKHTAR JEWELLERS", pageW / 2, y + 9, { align: "center" });
 
-    doc.setFontSize(9);
+    // tagline
+    doc.setFontSize(7.5);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(100);
-    doc.text("Main Bazaar, Lahore  •  042-37654321", pageWidth / 2, y, { align: "center" });
-    y += 8;
+    doc.setTextColor(...C.goldLight);
+    doc.text("Main Bazaar, Lahore  ·  042-37654321  ·  Finest Gold & Jewellery", pageW / 2, y + 16, { align: "center" });
 
-    // ── Transaction Type Badge ──
-    const isSale = data.transactionType === "SALE";
-    doc.setFontSize(11);
+    // badge strip at bottom of banner
+    const badgeText = isSale ? "✦  SALE INVOICE  ✦" : "✦  PURCHASE INVOICE  ✦";
+    doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(isSale ? 102 : 26, isSale ? 0 : 107, isSale ? 0 : 60);
-    doc.text(isSale ? "SALE INVOICE" : "PURCHASE INVOICE", pageWidth / 2, y, { align: "center" });
-    y += 3;
+    doc.setTextColor(...C.gold);
+    doc.text(badgeText, pageW / 2, y + 22, { align: "center" });
 
-    // ── Divider ──
-    doc.setDrawColor(200, 170, 100);
+    y += 29;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // META INFO BOX
+    // ════════════════════════════════════════════════════════════════════════
+    const metaH = 24;
+    doc.setFillColor(...C.cream);
+    doc.setDrawColor(...C.gold);
     doc.setLineWidth(0.5);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 6;
+    doc.roundedRect(M, y, CW, metaH, 2, 2, "FD");
 
-    // ── Invoice Info (2 columns) ──
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(40);
+    // divider between left/right column
+    doc.setDrawColor(...C.goldLight);
+    doc.setLineWidth(0.3);
+    doc.line(M + CW / 2, y + 3, M + CW / 2, y + metaH - 3);
 
-    const col1X = margin;
-    const col2X = pageWidth / 2 + 10;
-
-    if (isSale) {
-        doc.text(`Order #: ${data.orderNumber}`, col1X, y);
-    }
-    doc.text(`Date: ${data.date}`, col2X, y);
-    y += 5;
-
-    doc.text(`Receipt: ${data.receiptNo || "—"}`, col1X, y);
-    doc.text(`Gold Rate: ${formatPkr(data.goldRate)} / Tola`, col2X, y);
-    y += 5;
-
-    doc.text(`Party: ${data.partyName || "Walk-in"}`, col1X, y);
-    doc.text(`Mobile: ${data.partyMobile || "—"}`, col2X, y);
-    y += 5;
-
-    doc.text(`Polish: ${data.polishRate} (${data.polishBasis})`, col1X, y);
-    doc.text(`Labour: ${data.labourRate} (${data.labourBasis})`, col2X, y);
-    y += 8;
-
-    // ── Items Table ──
-    const tableColumns = [
-        { header: "#", dataKey: "sno" },
-        { header: "Category", dataKey: "category" },
-        { header: "Pcs", dataKey: "pcs" },
-        { header: "Ct", dataKey: "carat" },
-        { header: "Gold Wt", dataKey: "goldWt" },
-        { header: "Gold Amt", dataKey: "goldAmt" },
-        { header: "Stone", dataKey: "stoneAmt" },
-        { header: "Polish", dataKey: "polishAmt" },
-        { header: "Labour", dataKey: "labourAmt" },
-        { header: "Total", dataKey: "total" },
+    const metaRows: [string, string, string, string][] = [
+        [
+            isSale ? "Order #" : "Receipt",
+            isSale ? String(data.orderNumber) : (data.receiptNo || "—"),
+            "Gold Rate",
+            `Rs.${fmtNum(data.goldRate)} / Tola`,
+        ],
+        [
+            "Date",      data.date,
+            "Polish",    `${data.polishRate}  (${data.polishBasis})`,
+        ],
+        [
+            "Party",     data.partyName || "Walk-in",
+            "Labour",    `${data.labourRate}  (${data.labourBasis})`,
+        ],
+        [
+            "Mobile",    data.partyMobile || "—",
+            "Receipt",   data.receiptNo || "—",
+        ],
     ];
 
-    const tableRows = data.items.map((item, index) => ({
-        sno: (index + 1).toString(),
-        category: item.categoryName || "—",
-        pcs: item.pieces.toString(),
-        carat: `${item.carat}K`,
-        goldWt: formatGrams(item.adjustedGoldWeight),
-        goldAmt: formatPkr(item.goldAmount),
-        stoneAmt: item.stoneAmount > 0 ? formatPkr(item.stoneAmount) : "—",
-        polishAmt: formatPkr(item.polishAmount),
-        labourAmt: formatPkr(item.labourAmount),
-        total: formatPkr(item.totalAmount),
+    const lx  = M + 4;
+    const rx  = M + CW / 2 + 4;
+    const LBL = 20;                // label column width
+    let   my  = y + 6;
+    const MLH = 5;
+
+    for (const [ll, lv, rl, rv] of metaRows) {
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...C.textMid);
+        doc.text(ll + ":", lx, my);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...C.text);
+        doc.text(lv, lx + LBL, my);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...C.textMid);
+        doc.text(rl + ":", rx, my);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...C.text);
+        doc.text(rv, rx + LBL, my);
+
+        my += MLH;
+    }
+
+    y += metaH + 4;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ITEMS TABLE
+    // ════════════════════════════════════════════════════════════════════════
+    const vis  = data.visibleColumns ?? {};
+    const show = (k: string) => vis[k] !== false;
+
+    const hasImages = show("image") && data.items.some(i => i.imageUrl);
+    const imageUrls = data.items.map(i => i.imageUrl || null);
+    const IMG_W = 13;
+
+    const visCols = ALL_COLS.filter(c => {
+        if (c.purchaseOnly && !isPurchase) return false;
+        if (c.saleOnly    && isPurchase)   return false;
+        return show(c.key);
+    });
+
+    // dynamic width: give category the leftover space
+    const fixedW = visCols
+        .filter(c => c.key !== "description")
+        .reduce((s, c) => s + c.baseW, 0)
+        + (hasImages ? IMG_W : 0);
+
+    let catW = CW - fixedW;
+    let scale = 1;
+    if (catW < 22) {
+        scale = (CW - 22) / fixedW;
+        catW  = 22;
+    }
+
+    // build columnStyles
+    const colStyles: Record<string, object> = {};
+    if (hasImages) colStyles["img"] = { cellWidth: IMG_W, cellPadding: 1 };
+    for (const c of visCols) {
+        if (c.key === "description") {
+            colStyles[c.dataKey] = { cellWidth: catW, halign: "left" };
+        } else {
+            colStyles[c.dataKey] = {
+                cellWidth: Math.round(c.baseW * scale * 10) / 10,
+                halign: c.align,
+                ...(c.bold ? { fontStyle: "bold" } : {}),
+            };
+        }
+    }
+
+    const tblCols: { header: string; dataKey: string }[] = [
+        ...(hasImages ? [{ header: "", dataKey: "img" }] : []),
+        ...visCols.map(c => ({ header: c.header, dataKey: c.dataKey })),
+    ];
+
+    const tblRows = data.items.map((item, i) => ({
+        img:       "",
+        sno:       String(i + 1),
+        category:  [item.categoryName, item.description].filter(Boolean).join("\n") || "—",
+        pcs:       String(item.pieces),
+        carat:     `${item.carat}K`,
+        goldWt:    fmtG(item.adjustedGoldWeight),
+        kaatWt:    fmtG(item.kaatWeight ?? 0),
+        pureWt:    fmtG(item.adjustedGoldWeight),
+        stoneWt:   fmtG(item.stoneWeight),
+        beadsWt:   fmtG(item.beadsWeight),
+        diamondWt: fmtG(item.diamondWeight),
+        goldAmt:   fmtNum(item.goldAmount),
+        stoneAmt:  item.stoneAmount  > 0 ? fmtNum(item.stoneAmount)  : "—",
+        beadsAmt:  item.beadsAmount  > 0 ? fmtNum(item.beadsAmount)  : "—",
+        diamondAmt:item.diamondAmount > 0 ? fmtNum(item.diamondAmount): "—",
+        polishAmt: item.polishAmount > 0  ? fmtNum(item.polishAmount) : "—",
+        labourAmt: fmtNum(item.labourAmount),
+        total:     fmtNum(item.totalAmount),
     }));
 
+    const tblFs = visCols.length > 11 ? 6.5 : visCols.length > 9 ? 7 : 7.5;
+
     autoTable(doc, {
-        startY: y,
-        columns: tableColumns,
-        body: tableRows,
-        margin: { left: margin, right: margin },
+        startY:     y,
+        columns:    tblCols,
+        body:       tblRows,
+        margin:     { left: M, right: M },
+        tableWidth: CW,
         styles: {
-            fontSize: 8,
-            cellPadding: 2,
-            overflow: "linebreak",
+            fontSize:      tblFs,
+            cellPadding:   { top: 2.2, bottom: 2.2, left: 1.8, right: 1.8 },
+            overflow:      "linebreak",
+            valign:        "middle",
+            textColor:     C.text,
+            lineColor:     [220, 210, 195],
+            lineWidth:     0.15,
+            ...(hasImages ? { minCellHeight: 13 } : {}),
         },
         headStyles: {
-            fillColor: [102, 0, 0], // Maroon
-            textColor: 255,
-            fontStyle: "bold",
-            fontSize: 8,
+            fillColor:  C.maroon,
+            textColor:  255,
+            fontStyle:  "bold",
+            fontSize:   tblFs,
+            halign:     "center",
+            valign:     "middle",
+            cellPadding: { top: 3, bottom: 3, left: 1.8, right: 1.8 },
         },
-        alternateRowStyles: {
-            fillColor: [255, 248, 240],
-        },
-        columnStyles: {
-            sno: { cellWidth: 8, halign: "center" },
-            pcs: { cellWidth: 10, halign: "center" },
-            carat: { cellWidth: 10, halign: "center" },
-            goldWt: { cellWidth: 20, halign: "right" },
-            goldAmt: { halign: "right" },
-            stoneAmt: { halign: "right" },
-            polishAmt: { halign: "right" },
-            labourAmt: { halign: "right" },
-            total: { halign: "right", fontStyle: "bold" },
+        alternateRowStyles: { fillColor: C.cream },
+        columnStyles: colStyles,
+        didDrawCell: (cell) => {
+            if (!hasImages) return;
+            if (cell.column.dataKey !== "img" || cell.cell.section !== "body") return;
+            const url = imageUrls[cell.row.index];
+            if (!url) return;
+            try {
+                doc.addImage(url, imgFmt(url),
+                    cell.cell.x + 0.5, cell.cell.y + 0.5,
+                    cell.cell.width - 1, cell.cell.height - 1);
+            } catch { /* skip bad images */ }
         },
     });
 
-    // Get final Y after table
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
 
-    // ── Summary Box ──
-    const summaryX = pageWidth / 2 + 10;
-    const summaryWidth = pageWidth / 2 - margin - 10;
-    const lineHeight = 5.5;
-
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(40);
-
+    // ════════════════════════════════════════════════════════════════════════
+    // SUMMARY + SIGNATURE ROW
+    // ════════════════════════════════════════════════════════════════════════
     const summaryLines: [string, string][] = [
-        ["Total Gold Weight:", formatGrams(data.totalGoldWeight)],
-        ["Items Total:", formatPkr(data.totalAmount)],
+        ["Total Gold Wt :", `${data.totalGoldWeight.toFixed(3)} g`],
+        ["Items Total :",   `Rs.${fmtNum(data.totalAmount)}`],
     ];
+    if (data.otherCharges  > 0) summaryLines.push(["Other Charges :",   `+ Rs.${fmtNum(data.otherCharges)}`]);
+    if (data.discount      > 0) summaryLines.push(["Discount :",        `- Rs.${fmtNum(data.discount)}`]);
+    if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value :",  `- Rs.${fmtNum(data.partyGoldValue)}`]);
+    if (data.pasaDeduction  > 0) summaryLines.push(["Pasa Deduction :", `- Rs.${fmtNum(data.pasaDeduction)}`]);
+    if (data.cashReceived  > 0) summaryLines.push(["Cash Received :",   `Rs.${fmtNum(data.cashReceived)}`]);
 
-    if (data.otherCharges > 0) summaryLines.push(["Other Charges:", formatPkr(data.otherCharges)]);
-    if (data.discount > 0) summaryLines.push(["Discount:", `- ${formatPkr(data.discount)}`]);
-    if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value:", `- ${formatPkr(data.partyGoldValue)}`]);
-    if (data.pasaDeduction > 0) summaryLines.push(["Pasa Deduction:", `- ${formatPkr(data.pasaDeduction)}`]);
-    if (data.cashReceived > 0) summaryLines.push(["Cash Received:", formatPkr(data.cashReceived)]);
+    const SUM_LH  = 5.4;
+    const sumBodyH = summaryLines.length * SUM_LH;
+    const sumTotalH = sumBodyH + 6 + 12;   // body + gap + balance row
 
-    for (const [label, value] of summaryLines) {
-        doc.setFont("helvetica", "normal");
-        doc.text(label, summaryX, y);
-        doc.setFont("helvetica", "bold");
-        doc.text(value, summaryX + summaryWidth, y, { align: "right" });
-        y += lineHeight;
-    }
+    ensureSpace(sumTotalH + 20);
 
-    // Balance (highlighted)
-    y += 2;
-    doc.setDrawColor(102, 0, 0);
-    doc.setLineWidth(0.3);
-    doc.line(summaryX, y - 1, summaryX + summaryWidth, y - 1);
-    y += 3;
+    // summary box: right 45% of page
+    const sumX = M + CW * 0.54;
+    const sumW = CW * 0.46;
 
-    doc.setFontSize(11);
+    doc.setFillColor(...C.cream);
+    doc.setDrawColor(...C.gold);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(sumX, y, sumW, sumTotalH, 2, 2, "FD");
+
+    // summary header stripe
+    doc.setFillColor(...C.goldLight);
+    doc.roundedRect(sumX, y, sumW, 7, 2, 2, "F");
+    doc.rect(sumX, y + 3, sumW, 4, "F");   // square off bottom of rounded corners
+    doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(102, 0, 0);
-    doc.text("Balance:", summaryX, y);
-    doc.text(formatPkr(data.balance), summaryX + summaryWidth, y, { align: "right" });
-    y += 8;
+    doc.setTextColor(...C.maroon);
+    doc.text("INVOICE SUMMARY", sumX + sumW / 2, y + 5, { align: "center" });
 
-    // ── Remarks ──
-    if (data.remarks) {
+    let sy = y + 12;
+    for (const [lbl, val] of summaryLines) {
         doc.setFontSize(8);
-        doc.setFont("helvetica", "italic");
-        doc.setTextColor(100);
-        doc.text(`Remarks: ${data.remarks}`, margin, y);
-        y += 6;
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...C.textMid);
+        doc.text(lbl, sumX + 3, sy);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...C.text);
+        doc.text(val, sumX + sumW - 3, sy, { align: "right" });
+        sy += SUM_LH;
     }
 
-    // ── Footer ──
-    const footerY = doc.internal.pageSize.getHeight() - 15;
+    // separator line
+    sy += 2;
+    doc.setDrawColor(...C.gold);
+    doc.setLineWidth(0.4);
+    doc.line(sumX + 3, sy, sumX + sumW - 3, sy);
+    sy += 3;
+
+    // balance row
+    doc.setFillColor(...C.maroon);
+    doc.rect(sumX, sy - 3, sumW, 11, "F");
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...C.white);
+    doc.text("Balance Due:", sumX + 4, sy + 4);
+    doc.text(`Rs.${fmtNum(data.balance)}`, sumX + sumW - 4, sy + 4, { align: "right" });
+
+    // signature lines — left side, vertically centred with summary box
+    const sigY     = y + sumTotalH - 14;
+    const sigAreaW = CW * 0.50;
     doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(150);
-    doc.text("Thank you for your business!", pageWidth / 2, footerY, { align: "center" });
-    doc.text("This is a computer-generated invoice.", pageWidth / 2, footerY + 4, { align: "center" });
+    doc.setTextColor(...C.textLight);
+    doc.setDrawColor(...C.textLight);
+    doc.setLineWidth(0.25);
 
-    // ── Download ──
+    const s1x = M + 4;
+    const s2x = M + sigAreaW * 0.55;
+    const sLen = sigAreaW * 0.38;
+
+    doc.line(s1x, sigY, s1x + sLen, sigY);
+    doc.line(s2x, sigY, s2x + sLen, sigY);
+    doc.text("Customer Signature", s1x + sLen / 2, sigY + 4, { align: "center" });
+    doc.text("Authorised Signature", s2x + sLen / 2, sigY + 4, { align: "center" });
+
+    y += sumTotalH + 6;
+
+    // ════════════════════════════════════════════════════════════════════════
+    // REMARKS
+    // ════════════════════════════════════════════════════════════════════════
+    if (data.remarks) {
+        ensureSpace(14);
+        doc.setFillColor(255, 251, 243);
+        doc.setDrawColor(...C.goldLight);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(M, y, CW, 10, 1.5, 1.5, "FD");
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "italic");
+        doc.setTextColor(...C.textMid);
+        doc.text(`Remarks: ${data.remarks}`, M + 3, y + 6);
+        y += 14;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // INVOICE PHOTOS
+    // ════════════════════════════════════════════════════════════════════════
+    if (data.photos && data.photos.length > 0) {
+        ensureSpace(20);
+        y += 2;
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...C.maroon);
+        doc.text("INVOICE PHOTOS", M, y + 4);
+        y += 8;
+
+        const photoW = (CW - 6) / 2;
+        const photoH = photoW * 0.62;
+
+        for (let pi = 0; pi < data.photos.length; pi++) {
+            const col = pi % 2;
+            if (col === 0) ensureSpace(photoH + 4);
+            const px = M + col * (photoW + 6);
+            const py = y;
+            try {
+                doc.addImage(data.photos[pi], imgFmt(data.photos[pi]), px, py, photoW, photoH);
+            } catch { /* skip */ }
+            if (col === 1 || pi === data.photos.length - 1) y += photoH + 4;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // FOOTER  (every page)
+    // ════════════════════════════════════════════════════════════════════════
+    const totalPages = (doc as unknown as { internal: { getNumberOfPages(): number } }).internal.getNumberOfPages();
+    for (let pg = 1; pg <= totalPages; pg++) {
+        doc.setPage(pg);
+        const fy = pageH - 9;
+        doc.setDrawColor(...C.gold);
+        doc.setLineWidth(0.4);
+        doc.line(M, fy - 3, pageW - M, fy - 3);
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...C.textLight);
+        doc.text(
+            "Thank you for choosing Akhtar Jewellers — Computer-generated, no signature required.",
+            pageW / 2, fy + 1, { align: "center" }
+        );
+        if (totalPages > 1) {
+            doc.text(`Page ${pg} of ${totalPages}`, pageW - M, fy + 1, { align: "right" });
+        }
+    }
+
     const fileName = `AJ_Invoice_${data.orderNumber}_${data.date.replace(/-/g, "")}.pdf`;
     doc.save(fileName);
 }

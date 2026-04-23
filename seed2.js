@@ -28,10 +28,10 @@ async function main() {
         // 1. Ensure Organization
         console.log('Creating Org...')
         const org = await prisma.organization.upsert({
-            where: { id: 'org-default-001' },
+            where: { id: 'org-akhtar' },
             update: {},
             create: {
-                id: 'org-default-001',
+                id: 'org-akhtar',
                 name: 'Akhtar Jewellers',
                 address: 'Gold Market, City Center',
                 phone: '+92-300-1234567',

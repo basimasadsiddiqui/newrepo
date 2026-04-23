@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { metalRateService } from "@/lib/services/metalRateService";
+import { resolveOrgId } from "@/lib/org";
 
 export const dynamic = 'force-dynamic'; // Always fetch live data from DB
 
 export async function GET() {
     try {
-        const orgId = "org-default-001"; // Replace with dynamic orgId when multi-tenant is active
+        const orgId = await resolveOrgId();
         const rates = await metalRateService.getAllRates(orgId);
 
         return NextResponse.json({

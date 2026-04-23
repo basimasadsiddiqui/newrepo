@@ -52,7 +52,7 @@ export default function PaymentsPage() {
             }
 
             // Fetch Grid
-            const gridRes = await fetch(`/api/payments?category=$activeCategory}&status=$activeStatus}&page=$page}&search=$search}`);
+            const gridRes = await fetch(`/api/payments?category=${activeCategory}&status=${activeStatus}&page=${page}&search=${search}`);
             const gridData = await gridRes.json();
             if (!gridData.success) {
                 console.error("Failed to load payments API:", gridData.error);

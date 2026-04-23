@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { metalRateService } from "@/lib/services/metalRateService";
 import prisma from "@/lib/prisma";
+import { resolveOrgId } from "@/lib/org";
 
 // Fallback in case FreeCurrencyAPI fails completely
 const FALLBACK_USD_TO_PKR = 278.50;
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const orgId = "org-default-001"; // In a multi-tenant system, CRON might loop through orgs
+        const orgId = await resolveOrgId();
         const goldApiKey = process.env.GOLD_API_KEY || "goldapi-jkinksmluw455d-io";
 
         // 2. Fetch Organization Settings to get Local Market Premium
@@ -45,36 +46,69 @@ export async function GET(req: Request) {
             console.error("Exchange API network fetch failed. Using fallback.", exErr);
         }
 
-        // 4. Fetch Gold Rate (XAU) from New Pakistan API
-        const rapidApiKey = "3eb308323cmsh138ea7713424f9cp194528jsn8405c9364a6a";
+        // 4. Fetch Gold Rate (XAU)
+        // Prefer the Pakistan-localized feed when available, but fall back to GoldAPI
+        // if the RapidAPI subscription/key is missing or rejected.
+        const rapidApiKey = process.env.RAPIDAPI_KEY;
         const rapidApiHost = "gold-prices-pakistan.p.rapidapi.com";
 
-        const goldRes = await fetch("https://gold-prices-pakistan.p.rapidapi.com/history", {
-            headers: {
-                "x-rapidapi-host": rapidApiHost,
-                "x-rapidapi-key": rapidApiKey
-            },
-            cache: "no-store"
-        });
+        let baseGoldPkrPerGram: number | null = null;
+        let liveGoldUsdPerGram: number | null = null;
+        let goldSource = "GOLDAPI";
 
-        if (!goldRes.ok) throw new Error(`Pakistan Gold API failed: ${goldRes.statusText}`);
-        const goldData = await goldRes.json();
+        if (rapidApiKey) {
+            try {
+                const goldRes = await fetch("https://gold-prices-pakistan.p.rapidapi.com/history", {
+                    headers: {
+                        "x-rapidapi-host": rapidApiHost,
+                        "x-rapidapi-key": rapidApiKey
+                    },
+                    cache: "no-store"
+                });
 
-        // The API returns an object with dates as keys: { "21 Feb 2026": 517100.0, ... }
-        // We get the first value (most recent)
-        const latestDateKey = Object.keys(goldData)[0];
-        const liveGoldPkrPerTola = goldData[latestDateKey];
+                if (!goldRes.ok) {
+                    const errorBody = await goldRes.text();
+                    throw new Error(`Pakistan Gold API failed (${goldRes.status}): ${errorBody}`);
+                }
 
-        if (!liveGoldPkrPerTola) throw new Error("Could not parse latest gold rate from Pakistan API");
+                const goldData = await goldRes.json();
 
-        // Convert Tola to Gram (1 Tola = 11.664 Grams)
-        const baseGoldPkrPerGram = liveGoldPkrPerTola / 11.664;
+                // The API returns an object with dates as keys: { "21 Feb 2026": 517100.0, ... }
+                // We get the first value (most recent).
+                const latestDateKey = Object.keys(goldData)[0];
+                const liveGoldPkrPerTola = goldData[latestDateKey];
+
+                if (typeof liveGoldPkrPerTola !== "number" || liveGoldPkrPerTola <= 0) {
+                    throw new Error("Could not parse latest gold rate from Pakistan API");
+                }
+
+                baseGoldPkrPerGram = liveGoldPkrPerTola / 11.664;
+                liveGoldUsdPerGram = baseGoldPkrPerGram / usdToPkr;
+                goldSource = "RAPIDAPI_PAKISTAN";
+            } catch (rapidErr) {
+                console.error("RapidAPI gold fetch failed. Falling back to GoldAPI.", rapidErr);
+            }
+        }
+
+        if (baseGoldPkrPerGram === null || liveGoldUsdPerGram === null) {
+            const goldRes = await fetch("https://www.goldapi.io/api/XAU/USD", {
+                headers: { "x-access-token": goldApiKey },
+                cache: "no-store",
+            });
+
+            if (!goldRes.ok) throw new Error(`Gold API failed: ${goldRes.statusText}`);
+            const goldData = await goldRes.json();
+
+            liveGoldUsdPerGram = goldData.price_gram_24k || (goldData.price / 31.1034768);
+            if (!liveGoldUsdPerGram || liveGoldUsdPerGram <= 0) {
+                throw new Error("Could not parse latest gold rate from GoldAPI");
+            }
+
+            baseGoldPkrPerGram = liveGoldUsdPerGram * usdToPkr;
+        }
 
         // Apply Local Premium % (user might set to 0 now that it's localized, but we keep the feature)
         const localGoldPkrPerGram = baseGoldPkrPerGram * (1 + (premiumPercent / 100));
-
-        // Note: For response payloads that previously used USD values, we'll set it to 0 or calculate it backwards.
-        const liveGoldUsdPerGram = baseGoldPkrPerGram / usdToPkr;
 
         // 5. Fetch Silver Rate (XAG)
         const silverRes = await fetch("https://www.goldapi.io/api/XAG/USD", {
@@ -117,6 +151,7 @@ export async function GET(req: Request) {
                 international_exchange_rate_pkr: usdToPkr,
                 premium_percent: premiumPercent,
                 XAU: {
+                    source: goldSource,
                     base_usd_per_gram: liveGoldUsdPerGram,
                     base_pkr_per_gram: baseGoldPkrPerGram,
                     final_local_pkr_per_gram: localGoldPkrPerGram
@@ -130,13 +165,13 @@ export async function GET(req: Request) {
             }
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("[CRON] Metal Rate Update Failed:", error);
 
         // Return 500 so CRON services know it failed and can trigger alerts
         return NextResponse.json({
             success: false,
-            error: error.message || "Failed to update metal rates"
+            error: error instanceof Error ? error.message : "Failed to update metal rates"
         }, { status: 500 });
     }
 }

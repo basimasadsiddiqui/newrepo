@@ -18,7 +18,10 @@ export async function GET(_req: NextRequest, context: RouteParams) {
         const invoice = await prisma.invoice.findFirst({
             where: { id, orgId: ORG_ID },
             include: {
-                items: { orderBy: { sortOrder: "asc" } },
+                items: {
+                    orderBy: { sortOrder: "asc" },
+                    include: { category: { select: { name: true } } },
+                },
                 party: { select: { id: true, name: true, mobile: true, type: true, balance: true } },
             },
         });
@@ -165,6 +168,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                 size: (item.size as string) || null,
                 isRepairingOrder: Boolean(item.isRepairingOrder),
                 isSampleGold: Boolean(item.isSampleGold),
+                isBulkPurchase: Boolean(item.isBulkPurchase),
                 estimatedGoldWeight: toNumber(item.estimatedGoldWeight, 0),
                 adjustedGoldWeight: calc.adjustedGoldWeight,
                 estimatedGrossWeight: calc.estimatedGrossWeight,
@@ -276,6 +280,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                         size: item.size,
                         isRepairingOrder: item.isRepairingOrder,
                         isSampleGold: item.isSampleGold,
+                        isBulkPurchase: item.isBulkPurchase,
                         estimatedGoldWeight: item.estimatedGoldWeight,
                         adjustedGoldWeight: item.adjustedGoldWeight,
                         estimatedGrossWeight: item.estimatedGrossWeight,
