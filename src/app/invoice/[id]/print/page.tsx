@@ -1,4 +1,4 @@
-import prisma from "@/lib/prisma";
+import prisma from "@core/database";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import PrintButton from "./PrintButton";

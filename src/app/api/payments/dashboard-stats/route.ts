@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { paymentService } from "@/lib/services/paymentService";
+import { paymentService } from "@modules/payment/application/paymentService";
 
 export async function GET(req: Request) {
     try {

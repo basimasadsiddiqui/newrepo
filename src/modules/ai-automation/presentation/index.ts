@@ -1,0 +1,11 @@
+export { default as VoiceAssistant } from "@/components/automations/VoiceAssistant";
+export { default as ImageSearch } from "@/components/automations/ImageSearch";
+export { default as DailyDigest } from "@/components/automations/DailyDigest";
+export { default as SmartReminders } from "@/components/automations/SmartReminders";
+export { default as BusinessInsights } from "@/components/automations/BusinessInsights";
+export { default as AgentsHub } from "@/components/automations/AgentsHub";
+export { default as TTSSettings } from "@/components/automations/TTSSettings";
+export { default as VoiceInvoice } from "@/components/automations/VoiceInvoice";
+export { default as AgentChat } from "@/components/automations/AgentChat";
+export { default as SettingsPanel } from "@/components/automations/SettingsPanel";
+export { default as QuotaBanner } from "@/components/automations/QuotaBanner";

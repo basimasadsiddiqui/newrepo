@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma from "@core/database";
 import { PaymentStatus } from "@prisma/client";
 
 // In production, this route should be secured (e.g., verifying a Vercel Cron Secret)

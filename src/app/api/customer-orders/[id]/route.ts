@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma from "@core/database";
 import { OrderStatus, LedgerType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";

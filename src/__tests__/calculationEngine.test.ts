@@ -20,7 +20,7 @@ import {
     calcLabourAmount,
     calculateLineItem,
     calculateInvoiceSummary,
-} from "../lib/calculationEngine";
+} from "../modules/invoice/application/calculationEngine";
 
 const GRAMS_PER_TOLA = 11.664;
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { metalRateService } from "@/lib/services/metalRateService";
-import { resolveOrgId } from "@/lib/org";
+import { metalRateService } from "@modules/metals/application/metalRateService";
+import { resolveOrgId } from "@core/auth";
 
 export const dynamic = 'force-dynamic'; // Always fetch live data from DB
 

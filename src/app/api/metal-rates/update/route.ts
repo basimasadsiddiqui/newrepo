@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { metalRateService } from "@/lib/services/metalRateService";
-import prisma from "@/lib/prisma";
-import { resolveOrgId } from "@/lib/org";
+import { metalRateService } from "@modules/metals/application/metalRateService";
+import prisma from "@core/database";
+import { resolveOrgId } from "@core/auth";
 
 // Fallback in case FreeCurrencyAPI fails completely
 const FALLBACK_USD_TO_PKR = 278.50;

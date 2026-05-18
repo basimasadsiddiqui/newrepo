@@ -1,4 +1,4 @@
-import { getDashboardStats } from '@/lib/actions/inventory'
+import { getDashboardStats } from '@modules/inventory/application/inventoryActions'
 import InventoryCards from '@/components/inventory/InventoryCards'
 import { Metadata } from 'next'
 import Link from 'next/link'

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma from "@core/database";
 import { PaymentCategory, PaymentStatus } from "@prisma/client";
 
 const ORG_ID = "org-akhtar";
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
             calculateLineItem,
             calculateInvoiceSummary,
             goldRateToPerGram,
-        } = await import("@/lib/calculationEngine");
+        } = await import("@modules/invoice/application/calculationEngine");
         console.log("Calculation engine imported successfully");
 
         const goldRatePerGram = goldRateToPerGram(goldRate || 0);

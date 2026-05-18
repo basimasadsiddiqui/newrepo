@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma from "@core/database";
 
 const ORG_ID = "org-akhtar"; // TODO: from auth session
 

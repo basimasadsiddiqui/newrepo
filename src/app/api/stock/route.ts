@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma from "@core/database";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

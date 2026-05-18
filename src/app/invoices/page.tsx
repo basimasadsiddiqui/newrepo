@@ -25,8 +25,8 @@ import {
     Loader2
 } from "lucide-react";
 
-import { formatCurrency } from "@/lib/utils";
-import { Invoice } from "@/types";
+import { formatCurrency } from "@shared/utils";
+import { Invoice } from "@shared/types";
 
 interface InvoiceListResponse {
     success: boolean;

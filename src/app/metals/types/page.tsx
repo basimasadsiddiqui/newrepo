@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@core/database";
 import MetalTypesManager from "@/components/metals/MetalTypesManager";
 
 export const metadata: Metadata = {

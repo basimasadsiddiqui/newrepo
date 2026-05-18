@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { getActiveMetalRates, getLocalPremium } from "@/lib/actions/metalRates";
+import { getActiveMetalRates, getLocalPremium } from "@modules/metals/application/metalRateActions";
 import MetalRateManager from "@/components/admin/MetalRateManager";
 import GemstoneRatesManager from "@/components/settings/GemstoneRatesManager";
 

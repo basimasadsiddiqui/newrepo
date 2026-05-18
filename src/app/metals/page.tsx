@@ -1,6 +1,6 @@
 import { Metadata } from "next";
-import { getActiveMetalRates, getLocalPremium } from "@/lib/actions/metalRates";
-import { prisma } from "@/lib/prisma";
+import { getActiveMetalRates, getLocalPremium } from "@modules/metals/application/metalRateActions";
+import { prisma } from "@core/database";
 import MetalsOverview from "@/components/metals/MetalsOverview";
 
 export const metadata: Metadata = {

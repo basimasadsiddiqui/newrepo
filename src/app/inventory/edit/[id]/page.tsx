@@ -1,4 +1,4 @@
-import { getInventoryItem } from "@/lib/actions/inventory";
+import { getInventoryItem } from "@modules/inventory/application/inventoryActions";
 import EditInventoryForm from "@/components/inventory/EditInventoryForm";
 import { notFound } from "next/navigation";
 
