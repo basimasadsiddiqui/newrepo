@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
     FileText, LayoutDashboard, Users, Package,
     TrendingUp, Settings, ShoppingCart, Warehouse,
-    BarChart3, Scale, Banknote, PackagePlus,
+    BarChart3, Scale, Banknote, PackagePlus, Sparkles,
 } from "lucide-react";
 
 interface NavItem {
@@ -44,6 +44,12 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
             { label: "Sales Report",    icon: <TrendingUp />, href: "#", disabled: true },
             { label: "Stock",           icon: <Warehouse />,  href: "#", disabled: true },
             { label: "Analytics",       icon: <BarChart3 />,  href: "#", disabled: true },
+        ],
+    },
+    {
+        title: "AI & Automation",
+        items: [
+            { label: "Automations", icon: <Sparkles />, href: "/automations" },
         ],
     },
     {
