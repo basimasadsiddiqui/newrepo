@@ -71,23 +71,23 @@ type ColDef = {
 };
 
 const ALL_COLS: ColDef[] = [
-    { key: "sno",        header: "#",         dataKey: "sno",        baseW: 6,  align: "center" },
-    { key: "description",header: "Description",dataKey: "category",  baseW: 0,  align: "left"   },
-    { key: "pieces",     header: "Pcs",        dataKey: "pcs",        baseW: 8,  align: "center" },
-    { key: "carat",      header: "Ct",         dataKey: "carat",      baseW: 8,  align: "center" },
-    { key: "goldWt",     header: "Gold Wt\ng", dataKey: "goldWt",     baseW: 16, align: "right"  },
-    { key: "kaatWt",     header: "Kaat\ng",    dataKey: "kaatWt",     baseW: 14, align: "right",  purchaseOnly: true },
-    { key: "pureWt",     header: "Pure\ng",    dataKey: "pureWt",     baseW: 14, align: "right",  purchaseOnly: true },
-    { key: "stoneWt",    header: "Stone\ng",   dataKey: "stoneWt",    baseW: 14, align: "right"  },
-    { key: "beadsWt",    header: "Beads\ng",   dataKey: "beadsWt",    baseW: 14, align: "right"  },
-    { key: "diamondWt",  header: "Dmnd\ng",    dataKey: "diamondWt",  baseW: 14, align: "right"  },
-    { key: "goldAmt",    header: "Gold Amt",   dataKey: "goldAmt",    baseW: 20, align: "right"  },
-    { key: "stoneAmt",   header: "Stone",      dataKey: "stoneAmt",   baseW: 17, align: "right"  },
-    { key: "beadsAmt",   header: "Beads",      dataKey: "beadsAmt",   baseW: 17, align: "right"  },
-    { key: "diamondAmt", header: "Dmnd",       dataKey: "diamondAmt", baseW: 17, align: "right"  },
-    { key: "polishAmt",  header: "Polish",     dataKey: "polishAmt",  baseW: 16, align: "right",  saleOnly: true },
-    { key: "labourAmt",  header: "Labour",     dataKey: "labourAmt",  baseW: 16, align: "right"  },
-    { key: "total",      header: "Total",      dataKey: "total",      baseW: 20, align: "right",  bold: true },
+    { key: "sno",        header: "#",           dataKey: "sno",        baseW: 6,  align: "center" },
+    { key: "description",header: "Description", dataKey: "category",   baseW: 0,  align: "left"   },
+    { key: "pieces",     header: "Pcs",          dataKey: "pcs",        baseW: 8,  align: "center" },
+    { key: "carat",      header: "Carat",        dataKey: "carat",      baseW: 12, align: "center" },
+    { key: "goldWt",     header: "Gold Wt\n(g)", dataKey: "goldWt",     baseW: 16, align: "right"  },
+    { key: "kaatWt",     header: "Kaat\n(g)",    dataKey: "kaatWt",     baseW: 14, align: "right",  purchaseOnly: true },
+    { key: "pureWt",     header: "Pure Wt\n(g)", dataKey: "pureWt",     baseW: 16, align: "right",  purchaseOnly: true },
+    { key: "stoneWt",    header: "Stone\n(g)",   dataKey: "stoneWt",    baseW: 14, align: "right"  },
+    { key: "beadsWt",    header: "Beads\n(g)",   dataKey: "beadsWt",    baseW: 14, align: "right"  },
+    { key: "diamondWt",  header: "Dmnd\n(g)",    dataKey: "diamondWt",  baseW: 14, align: "right"  },
+    { key: "goldAmt",    header: "Gold Amt",     dataKey: "goldAmt",    baseW: 22, align: "right"  },
+    { key: "stoneAmt",   header: "Stone Amt",    dataKey: "stoneAmt",   baseW: 18, align: "right"  },
+    { key: "beadsAmt",   header: "Beads Amt",    dataKey: "beadsAmt",   baseW: 18, align: "right"  },
+    { key: "diamondAmt", header: "Dmnd Amt",     dataKey: "diamondAmt", baseW: 18, align: "right"  },
+    { key: "polishAmt",  header: "Polish",       dataKey: "polishAmt",  baseW: 16, align: "right",  saleOnly: true },
+    { key: "labourAmt",  header: "Labour",       dataKey: "labourAmt",  baseW: 16, align: "right"  },
+    { key: "total",      header: "Total",        dataKey: "total",      baseW: 22, align: "right",  bold: true },
 ];
 
 export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
@@ -122,7 +122,7 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
     doc.setTextColor(...C.goldLight);
     doc.text("Main Bazaar, Lahore  ·  042-37654321  ·  Finest Gold & Jewellery", pageW / 2, y + 16, { align: "center" });
 
-    const badgeText = isSale ? "✦  SALE INVOICE  ✦" : "✦  PURCHASE INVOICE  ✦";
+    const badgeText = isSale ? "✦  SALE INVOICE  ✦" : "✦  BULK PURCHASE INVOICE  ✦";
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...C.gold);
@@ -230,8 +230,8 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
         sno:       String(i + 1),
         category:  [item.categoryName, item.description].filter(Boolean).join("\n") || "—",
         pcs:       String(item.pieces),
-        carat:     `${item.carat}K`,
-        goldWt:    fmtG(item.adjustedGoldWeight),
+        carat:     item.carat > 0 ? `${item.carat}K` : "—",
+        goldWt:    fmtG(item.estimatedGoldWeight),
         kaatWt:    fmtG(item.kaatWeight ?? 0),
         pureWt:    fmtG(item.adjustedGoldWeight),
         stoneWt:   fmtG(item.stoneWeight),
@@ -275,6 +275,14 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
         },
         alternateRowStyles: { fillColor: C.cream },
         columnStyles: colStyles,
+        // Gold Wt column — always gold-tinted regardless of alternating rows
+        didParseCell: (data) => {
+            if (data.column.dataKey === "goldWt") {
+                data.cell.styles.fillColor  = [245, 232, 190] as [number,number,number];
+                data.cell.styles.textColor  = [120, 80, 10]   as [number,number,number];
+                data.cell.styles.fontStyle  = "bold";
+            }
+        },
         didDrawCell: (cell) => {
             if (!hasImages) return;
             if (cell.column.dataKey !== "img" || cell.cell.section !== "body") return;
@@ -291,15 +299,26 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
     y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
 
     // ── SUMMARY + SIGNATURE ROW ────────────────────────────────────────────────
-    const summaryLines: [string, string][] = [
-        ["Total Gold Wt :", `${data.totalGoldWeight.toFixed(3)} g`],
-        ["Items Total :",   `Rs.${fmtNum(data.totalAmount)}`],
-    ];
-    if (data.otherCharges  > 0) summaryLines.push(["Other Charges :",   `+ Rs.${fmtNum(data.otherCharges)}`]);
-    if (data.discount      > 0) summaryLines.push(["Discount :",        `- Rs.${fmtNum(data.discount)}`]);
-    if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value :",  `- Rs.${fmtNum(data.partyGoldValue)}`]);
-    if (data.pasaDeduction  > 0) summaryLines.push(["Pasa Deduction :", `- Rs.${fmtNum(data.pasaDeduction)}`]);
-    if (data.cashReceived  > 0) summaryLines.push(["Cash Received :",   `Rs.${fmtNum(data.cashReceived)}`]);
+    // Purchase: weight-first summary (no balance). Sale: amount-first summary.
+    const summaryLines: [string, string][] = isPurchase
+        ? [
+            ["Total Gold Weight :",   `${data.totalGoldWeight.toFixed(3)} g`],
+            ["Total Kaat Weight :",   `${data.items.reduce((s, i) => s + (i.kaatWeight ?? 0), 0).toFixed(3)} g`],
+            ["Net Pure Weight :",     `${data.items.reduce((s, i) => s + i.adjustedGoldWeight, 0).toFixed(3)} g`],
+            ["Total Stone Weight :",  `${data.items.reduce((s, i) => s + i.stoneWeight, 0).toFixed(3)} g`],
+          ]
+        : [
+            ["Total Gold Wt :",   `${data.totalGoldWeight.toFixed(3)} g`],
+            ["Items Total :",     `Rs.${fmtNum(data.totalAmount)}`],
+          ];
+
+    if (!isPurchase) {
+        if (data.otherCharges  > 0) summaryLines.push(["Other Charges :",   `+ Rs.${fmtNum(data.otherCharges)}`]);
+        if (data.discount      > 0) summaryLines.push(["Discount :",        `- Rs.${fmtNum(data.discount)}`]);
+        if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value :",  `- Rs.${fmtNum(data.partyGoldValue)}`]);
+        if (data.pasaDeduction  > 0) summaryLines.push(["Pasa Deduction :", `- Rs.${fmtNum(data.pasaDeduction)}`]);
+        if (data.cashReceived  > 0) summaryLines.push(["Cash Received :",   `Rs.${fmtNum(data.cashReceived)}`]);
+    }
 
     const SUM_LH  = 5.4;
     const sumBodyH = summaryLines.length * SUM_LH;
@@ -346,8 +365,14 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...C.white);
-    doc.text("Balance Due:", sumX + 4, sy + 4);
-    doc.text(`Rs.${fmtNum(data.balance)}`, sumX + sumW - 4, sy + 4, { align: "right" });
+    if (isPurchase) {
+        doc.text("Net Pure Weight:", sumX + 4, sy + 4);
+        const netPure = data.items.reduce((s, i) => s + i.adjustedGoldWeight, 0);
+        doc.text(`${netPure.toFixed(3)} g`, sumX + sumW - 4, sy + 4, { align: "right" });
+    } else {
+        doc.text("Balance Due:", sumX + 4, sy + 4);
+        doc.text(`Rs.${fmtNum(data.balance)}`, sumX + sumW - 4, sy + 4, { align: "right" });
+    }
 
     const sigY     = y + sumTotalH - 14;
     const sigAreaW = CW * 0.50;

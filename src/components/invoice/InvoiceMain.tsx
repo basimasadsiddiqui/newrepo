@@ -221,6 +221,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const [isBulkModalOpen, setIsBulkModalOpen] = useState<boolean>(false);
   // null = new bulk; number = index of item being re-categorised (replace mode)
   const [categorizingItemIndex, setCategorizingItemIndex] = useState<number | null>(null);
+  // Track which tab is active in BulkEntryPanel so we can expand the container
+  const [bulkPanelMode, setBulkPanelMode] = useState<"quick" | "categorize">("quick");
 
   // Load from localStorage OR from DB (when ?id= param is present)
   useEffect(() => {
@@ -1224,18 +1226,21 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     const newItems = rows
       .filter(r => r.estimatedGoldWeight > 0 || r.description.trim())
       .map((r, i) => {
-        // Force isBulkPurchase=true in bulk mode
-        const calc = calculateLineItem({
+        // Use pre-calculated values from BulkEntryPanel if present (preserves local kaat/stone/labour)
+        // otherwise fall back to calculateLineItem with global rules
+        const hasPreCalc = r.goldAmount !== undefined;
+        const calc = hasPreCalc ? null : calculateLineItem({
           transactionType,
           estimatedGoldWeight: r.estimatedGoldWeight,
           carat: r.carat,
           goldRatePerGram,
           polishRate, polishBasis,
           labourRate, labourBasis,
-          kaatBasis, kaatRate,
+          kaatBasis: (r.kaatBasis as import("@/lib/calculationEngine").KaatBasis | undefined) ?? kaatBasis,
+          kaatRate: r.kaatRate ?? kaatRate,
           stoneWeight: r.stoneWeight,
           beadsWeight: 0, diamondWeight: 0,
-          stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
+          stoneAmount: r.stoneAmount ?? 0, beadsAmount: 0, diamondAmount: 0,
         });
         const cat = categories.find(c => c.id === r.categoryId);
         return {
@@ -1251,18 +1256,19 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           isSampleGold: false,
           isBulkPurchase: isBulkMode ? true : (r.isBulkPurchase ?? false),
           estimatedGoldWeight: r.estimatedGoldWeight,
-          adjustedGoldWeight: calc.adjustedGoldWeight,
-          estimatedGrossWeight: calc.estimatedGrossWeight,
+          adjustedGoldWeight: r.adjustedGoldWeight ?? calc?.adjustedGoldWeight ?? r.estimatedGoldWeight,
+          kaatWeight: r.kaatWeight ?? calc?.kaatWeight ?? 0,
+          estimatedGrossWeight: calc?.estimatedGrossWeight ?? r.grossWeight ?? r.estimatedGoldWeight,
           stoneWeight: r.stoneWeight,
           beadsWeight: 0,
           diamondWeight: 0,
-          goldAmount: calc.goldAmount,
-          stoneAmount: 0,
+          goldAmount: r.goldAmount ?? calc?.goldAmount ?? 0,
+          stoneAmount: r.stoneAmount ?? 0,
           beadsAmount: 0,
           diamondAmount: 0,
-          polishAmount: calc.polishAmount,
-          labourAmount: calc.labourAmount,
-          totalAmount: calc.totalAmount,
+          polishAmount: calc?.polishAmount ?? 0,
+          labourAmount: r.labourAmount ?? calc?.labourAmount ?? 0,
+          totalAmount: r.totalAmount ?? calc?.totalAmount ?? 0,
           imageUrl: null,
           inventoryItemId: null,
           metalTypeId: null,
@@ -1298,7 +1304,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     // Read column visibility from localStorage so hidden columns stay out of the PDF
     let visibleColumns: Record<string, boolean> = {};
     try {
-      const raw = localStorage.getItem("invoice_grid_visible_columns_v2");
+      const key = isBulkMode ? "invoice_grid_visible_columns_bulk_v1" : "invoice_grid_visible_columns_v2";
+      const raw = localStorage.getItem(key);
       if (raw) visibleColumns = JSON.parse(raw) as Record<string, boolean>;
     } catch { /* use defaults */ }
 
@@ -1394,29 +1401,35 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       />
 
       {/* ── Row 2: Item Entry + Rules Panel (side-by-side) ── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 300px",
-          gap: "10px",
-          alignItems: "start",
-        }}
-      >
-        {isBulkMode ? (
-          <BulkEntryPanel
-            onConfirm={handleBulkAdd}
-            onSaveDraft={handleSaveDraft}
-            onGeneratePdf={handleGeneratePdf}
-            categories={categories}
-            goldRate={goldRate}
-            polishBasis={polishBasis}
-            polishRate={polishRate}
-            labourBasis={labourBasis}
-            labourRate={labourRate}
-            kaatBasis={kaatBasis}
-            kaatRate={kaatRate}
-          />
-        ) : (
+      {isBulkMode ? (
+        /* Bulk mode: full width always */
+        <div style={{ width: "100%" }}>
+          <div style={{ width: "100%" }}>
+            <BulkEntryPanel
+              onConfirm={handleBulkAdd}
+              onModeChange={setBulkPanelMode}
+              onSaveDraft={handleSaveDraft}
+              onGeneratePdf={handleGeneratePdf}
+              categories={categories}
+              goldRate={goldRate}
+              polishBasis={polishBasis}
+              polishRate={polishRate}
+              labourBasis={labourBasis}
+              labourRate={labourRate}
+              kaatBasis={kaatBasis}
+              kaatRate={kaatRate}
+            />
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 300px",
+            gap: "10px",
+            alignItems: "start",
+          }}
+        >
           <ItemEntryForm
             categories={categories}
             metalTypes={metalTypes}
@@ -1432,41 +1445,40 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             onBulkPurchase={() => setIsBulkModalOpen(true)}
             onGoldRateChange={transactionType === "PURCHASE" ? setGoldRate : undefined}
           />
-        )}
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <JewelleryRulesPanel
-            transactionType={transactionType}
-            polishBasis={polishBasis}
-            polishRate={polishRate}
-            labourBasis={labourBasis}
-            labourRate={labourRate}
-            estimatedGoldWeight={currentItemCalc.adjustedGoldWeight > 0 ? itemForm.estimatedGoldWeight : invoiceSummary.totalGoldWeight}
-            adjustedGoldWeight={currentItemCalc.adjustedGoldWeight > 0 ? currentItemCalc.adjustedGoldWeight : invoiceSummary.totalGoldWeight}
-            estimatedGrossWeight={currentItemCalc.estimatedGrossWeight}
-            customerGoldWeight={partyGoldWeight}
-            customerGoldCarat={partyGoldCarat}
-            customerGoldValue={partyGoldValue}
-            pasaRate={pasaRate}
-            pasaDeduction={pasaDeduction}
-            goldRate={goldRate}
-            kaatBasis={kaatBasis}
-            kaatRate={kaatRate}
-            onPolishBasisChange={setPolishBasis}
-            onPolishRateChange={setPolishRate}
-            onLabourBasisChange={setLabourBasis}
-            onLabourRateChange={setLabourRate}
-            onKaatBasisChange={setKaatBasis}
-            onKaatRateChange={setKaatRate}
-            onGoldRateChange={setGoldRate}
-            onGoldCaratChange={setGoldCarat}
-            onCustomerGoldWeightChange={setPartyGoldWeight}
-            onCustomerGoldCaratChange={setPartyGoldCarat}
-            onPasaRateChange={setPasaRate}
-          />
-          <PhotoSystem photos={photos} onPhotosChange={setPhotos} />
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <JewelleryRulesPanel
+              transactionType={transactionType}
+              polishBasis={polishBasis}
+              polishRate={polishRate}
+              labourBasis={labourBasis}
+              labourRate={labourRate}
+              estimatedGoldWeight={currentItemCalc.adjustedGoldWeight > 0 ? itemForm.estimatedGoldWeight : invoiceSummary.totalGoldWeight}
+              adjustedGoldWeight={currentItemCalc.adjustedGoldWeight > 0 ? currentItemCalc.adjustedGoldWeight : invoiceSummary.totalGoldWeight}
+              estimatedGrossWeight={currentItemCalc.estimatedGrossWeight}
+              customerGoldWeight={partyGoldWeight}
+              customerGoldCarat={partyGoldCarat}
+              customerGoldValue={partyGoldValue}
+              pasaRate={pasaRate}
+              pasaDeduction={pasaDeduction}
+              goldRate={goldRate}
+              kaatBasis={kaatBasis}
+              kaatRate={kaatRate}
+              onPolishBasisChange={setPolishBasis}
+              onPolishRateChange={setPolishRate}
+              onLabourBasisChange={setLabourBasis}
+              onLabourRateChange={setLabourRate}
+              onKaatBasisChange={setKaatBasis}
+              onKaatRateChange={setKaatRate}
+              onGoldRateChange={setGoldRate}
+              onGoldCaratChange={setGoldCarat}
+              onCustomerGoldWeightChange={setPartyGoldWeight}
+              onCustomerGoldCaratChange={setPartyGoldCarat}
+              onPasaRateChange={setPasaRate}
+            />
+            <PhotoSystem photos={photos} onPhotosChange={setPhotos} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Row 3: Item Grid (FULL WIDTH — no horizontal scroll) ── */}
       <input
@@ -1484,10 +1496,12 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         onDeleteItem={handleDeleteItem}
         onImageUpload={handleImageUpload}
         onCategorize={transactionType === "PURCHASE" ? handleCategorize : undefined}
+        isBulkMode={isBulkMode}
       />
 
       {/* ── Row 4: Invoice Summary (full width) ── */}
       <InvoiceSummary
+        transactionType={transactionType}
         totalGoldWeight={invoiceSummary.totalGoldWeight}
         totalAmount={invoiceSummary.totalAmount}
         otherCharges={otherCharges}
@@ -1519,6 +1533,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           window.open("/payments", "_blank");
         }}
       />
+
+      {/* ── Photo System — shown after summary in bulk mode ── */}
+      {isBulkMode && <PhotoSystem photos={photos} onPhotosChange={setPhotos} />}
 
       {/* ── Bulk Add Modal (re-categorize existing bulk items only) ── */}
       <BulkAddModal

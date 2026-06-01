@@ -30,6 +30,7 @@ import {
 import { formatCurrency, formatWeight } from "@/lib/utils";
 
 interface InvoiceSummaryProps {
+    transactionType?: "SALE" | "PURCHASE";
     /** All monetary and weight totals */
     totalGoldWeight: number;
     totalAmount: number;
@@ -58,6 +59,7 @@ interface InvoiceSummaryProps {
 }
 
 export default function InvoiceSummary({
+    transactionType = "SALE",
     totalGoldWeight,
     totalAmount,
     otherCharges,
@@ -276,27 +278,23 @@ export default function InvoiceSummary({
                         />
                     </div>
 
-                    {/* Balance (auto) */}
-                    <div className="summary-row total balance">
-                        <span className="label">Balance Due</span>
-                        <span
-                            className={`value ${balance <= 0 ? "paid" : ""}`}
-                            style={{ fontSize: "1.25rem" }}
-                        >
-                            Rs. {formatCurrency(Math.abs(balance))}
-                            {balance <= 0 && balance !== 0 && (
-                                <span
-                                    style={{
-                                        fontSize: "0.6875rem",
-                                        marginLeft: "4px",
-                                        fontWeight: 400,
-                                    }}
-                                >
-                                    (overpaid)
-                                </span>
-                            )}
-                        </span>
-                    </div>
+                    {/* Balance — hidden for purchase invoices */}
+                    {transactionType === "SALE" && (
+                        <div className="summary-row total balance">
+                            <span className="label">Balance Due</span>
+                            <span
+                                className={`value ${balance <= 0 ? "paid" : ""}`}
+                                style={{ fontSize: "1.25rem" }}
+                            >
+                                Rs. {formatCurrency(Math.abs(balance))}
+                                {balance <= 0 && balance !== 0 && (
+                                    <span style={{ fontSize: "0.6875rem", marginLeft: "4px", fontWeight: 400 }}>
+                                        (overpaid)
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
-    Plus, Trash2, PackagePlus, AlertTriangle, CheckCircle2,
+    Plus, Trash2, PackagePlus, CheckCircle2, AlertTriangle,
     Scale, Zap, LayoutList, FileText, Save,
+    Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
 import { calculateLineItem, goldRateToPerGram } from "@/lib/calculationEngine";
@@ -16,12 +17,42 @@ export interface BulkRow {
     carat: number;
     pieces: number;
     estimatedGoldWeight: number;
+    grossWeight?: number;
+    adjustedGoldWeight?: number;  // pre-calculated net weight after kaat
+    kaatWeight?: number;          // pre-calculated kaat deduction (g)
+    kaatBasis?: string;
+    kaatRate?: number;
     stoneWeight: number;
+    stoneAmount?: number;         // pre-calculated stone total
+    goldAmount?: number;          // pre-calculated gold value
+    labourAmount?: number;        // pre-calculated labour
+    totalAmount?: number;         // pre-calculated total
+    notes?: string;
     isBulkPurchase?: boolean;
+}
+
+type LocalKaatBasis = KaatBasis | "Purity" | "None";
+type StoneRateBasis = "Per Carat" | "Per Gram" | "Per Piece" | "Lumpsum";
+type LocalLabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum";
+
+interface StoneRow {
+    id: string;
+    type: string;
+    pieces: number;
+    value: number;   // total weight in selected unit
+    unit: "ct" | "g";
+    rateBasis: StoneRateBasis;
+    rate: number;
+}
+
+let stoneCounter = 0;
+function mkStoneRow(): StoneRow {
+    return { id: `stone-${Date.now()}-${++stoneCounter}`, type: "", pieces: 1, value: 0, unit: "g", rateBasis: "Per Gram", rate: 0 };
 }
 
 interface BulkEntryPanelProps {
     onConfirm: (rows: BulkRow[]) => void;
+    onModeChange?: (mode: "quick" | "categorize") => void;
     onSaveDraft?: () => Promise<void>;
     onGeneratePdf?: () => Promise<void>;
     categories: Category[];
@@ -41,14 +72,19 @@ function mkRow(carat = 21): BulkRow {
         categoryId: "",
         description: "",
         carat,
-        pieces: 1,
+        pieces: 0,
         estimatedGoldWeight: 0,
+        grossWeight: 0,
         stoneWeight: 0,
+        notes: "",
     };
 }
 
+const sel = (e: React.FocusEvent<HTMLInputElement>) => e.target.select();
+
 export default function BulkEntryPanel({
     onConfirm,
+    onModeChange,
     onSaveDraft,
     onGeneratePdf,
     categories,
@@ -57,28 +93,85 @@ export default function BulkEntryPanel({
 }: BulkEntryPanelProps) {
     const [mode, setMode] = useState<"quick" | "categorize">("quick");
 
+    const switchMode = (m: "quick" | "categorize") => {
+        setMode(m);
+        onModeChange?.(m);
+    };
+
     // ── Quick entry state ──
-    const [quickDesc, setQuickDesc] = useState("Bulk Gold Purchase");
+    const [quickDesc, setQuickDesc] = useState("");
     const [quickWeight, setQuickWeight] = useState<number>(0);
+    const [quickLocalRate, setQuickLocalRate] = useState<number>(0);
+    const [quickPieces, setQuickPieces] = useState<number>(1);
     const [quickCarat, setQuickCarat] = useState<number>(21);
-    const [quickStoneWeight, setQuickStoneWeight] = useState<number>(0);
+    const [gRatti, setGRatti] = useState<number>(0);   // supplier's guaranteed ratti kaat
+    const [hasStone, setHasStone] = useState(false);
+    const [stoneRows, setStoneRows] = useState<StoneRow[]>([]);
+    const [stoneDraft, setStoneDraft] = useState<StoneRow>(() => mkStoneRow());
+    const [editingStoneId, setEditingStoneId] = useState<string | null>(null);
+    const [showStoneModal, setShowStoneModal] = useState(false);
+
+    // derived from stone rows
+    const totalStoneWeightG  = stoneRows.reduce((sum, r) => sum + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
+    const totalStoneWeightCt = stoneRows.reduce((sum, r) => sum + (r.unit === "g"  ? r.value / 0.2 : r.value), 0);
+    const totalStoneAmount = stoneRows.reduce((sum, r) => {
+        const wG  = r.unit === "ct" ? r.value * 0.2 : r.value;       // always in grams
+        const wCt = r.unit === "g"  ? r.value / 0.2 : r.value;       // always in carats (1g = 5ct)
+        if (r.rateBasis === "Per Carat") return sum + wCt * r.rate;
+        if (r.rateBasis === "Per Gram")  return sum + wG  * r.rate;
+        if (r.rateBasis === "Per Piece") return sum + r.pieces * r.rate;
+        return sum + r.rate; // Lumpsum — flat
+    }, 0);
     const [quickNotes, setQuickNotes] = useState("");
+
+    // ── Kaat — inline with Carat (not in a collapsible, not duplicated) ──
+    const [localKaatBasis, setLocalKaatBasis] = useState<LocalKaatBasis>("Ratti Kaat");
+    const [localKaatRate, setLocalKaatRate] = useState<number>(0);
+
+    // ── Labour ──
+    const [localLabourBasis, setLocalLabourBasis] = useState<LocalLabourBasis>("Per Gram");
+    const [localLabourRate, setLocalLabourRate] = useState<number>(labourRate);
+
 
     // ── Categorize state ──
     const [totalBulkWeight, setTotalBulkWeight] = useState<number>(0);
-    const [bulkCarat, setBulkCarat] = useState<number>(21);
-    const [rows, setRows] = useState<BulkRow[]>([mkRow(21), mkRow(21), mkRow(21)]);
+    const [bulkCarat, setBulkCarat] = useState<number>(0);
+    const [rows, setRows] = useState<BulkRow[]>([mkRow(0), mkRow(0), mkRow(0)]);
 
     // ── Loading states ──
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
 
-    const goldRatePerGram = goldRateToPerGram(goldRate);
+    // intentionally not syncing goldRate prop to local rate — user enters it fresh
+
+    const goldRatePerGram = goldRateToPerGram(quickLocalRate || goldRate);
+
+    // ── Pure weight after kaat ──
+    // Pasa    = auto from carat, no manual entry: weight × (carat/24)
+    // Purity  = user enters custom purity %:       weight × (rate/100)
+    // Ratti   = user enters ratti count:           weight × (96−ratti)/96
+    const kaatPureWeight = useMemo(() => {
+        if (quickWeight <= 0) return null;
+        if (localKaatBasis === "Ratti Kaat" && localKaatRate > 0)
+            return Math.round(quickWeight * (96 - localKaatRate) / 96 * 1000) / 1000;
+        if (localKaatBasis === "Direct Weight" && quickCarat > 0)  // Carat-Based deduction
+            return Math.round(quickWeight * (quickCarat / 24) * 1000) / 1000;
+        if (localKaatBasis === "Purity" && localKaatRate > 0)      // Purity %: Weight × (Purity/100), e.g. 200×88%=176
+            return Math.round(quickWeight * (localKaatRate / 100) * 1000) / 1000;
+        // "None" → null (no deduction, Pasa)
+        return null;
+    }, [quickWeight, localKaatBasis, localKaatRate, quickCarat]);
+
+    const kaatDeduction = kaatPureWeight !== null ? quickWeight - kaatPureWeight : 0;
+
+    // ── Map local kaat basis to engine KaatBasis ──
+    // Pasa and Purity both resolve via carat purity — engine handles with undefined kaatBasis
+    const effectiveKaatBasis: KaatBasis | undefined =
+        localKaatBasis === "Ratti Kaat" ? "Ratti Kaat" :
+        localKaatBasis === "Direct Weight" ? "Direct Weight" :
+        undefined; // "None" and "Purity" both pass through as undefined (engine skips kaat)
 
     // ── Quick mode calcs ──
-    const quickPurity = quickCarat / 24;
-    const quickPureGold = quickWeight * quickPurity;
-    const quickAlloy = quickWeight - quickPureGold;
     const quickCalc = useMemo(() => {
         if (quickWeight <= 0) return null;
         return calculateLineItem({
@@ -86,14 +179,18 @@ export default function BulkEntryPanel({
             estimatedGoldWeight: quickWeight,
             carat: quickCarat,
             goldRatePerGram,
-            polishRate, polishBasis,
-            labourRate, labourBasis,
-            kaatBasis, kaatRate,
-            stoneWeight: quickStoneWeight,
+            polishRate: 0, polishBasis: "Per Tola",
+            labourRate: localLabourRate,
+            labourBasis: localLabourBasis as import("@/lib/calculationEngine").LabourBasis,
+            pieces: quickPieces,
+            kaatBasis: effectiveKaatBasis, kaatRate: localKaatRate,
+            stoneWeight: hasStone ? totalStoneWeightG : 0,
             beadsWeight: 0, diamondWeight: 0,
-            stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
+            stoneAmount: hasStone ? totalStoneAmount : 0, beadsAmount: 0, diamondAmount: 0,
         });
-    }, [quickWeight, quickCarat, quickStoneWeight, goldRatePerGram, polishRate, polishBasis, labourRate, labourBasis, kaatBasis, kaatRate]);
+    }, [quickWeight, quickCarat, goldRatePerGram,
+        localLabourRate, localLabourBasis, quickPieces, effectiveKaatBasis, localKaatRate,
+        hasStone, totalStoneWeightG, totalStoneAmount]);
 
     // ── Categorize calcs ──
     const allocatedWeight = useMemo(
@@ -134,27 +231,52 @@ export default function BulkEntryPanel({
     };
 
     const resetAll = () => {
-        setQuickDesc("Bulk Gold Purchase");
+        setQuickDesc("");
         setQuickWeight(0);
+        setQuickLocalRate(0);
+        setQuickPieces(1);
         setQuickCarat(21);
-        setQuickStoneWeight(0);
+        setGRatti(0);
+        setHasStone(false);
+        setStoneRows([]);
+        setStoneDraft(mkStoneRow());
+        setEditingStoneId(null);
+        setShowStoneModal(false);
         setQuickNotes("");
+        setLocalKaatBasis("Ratti Kaat");
+        setLocalKaatRate(0);
+        setLocalLabourBasis("Per Gram");
+        setLocalLabourRate(labourRate);
         setTotalBulkWeight(0);
-        setBulkCarat(21);
-        setRows([mkRow(21), mkRow(21), mkRow(21)]);
-        setMode("quick");
+        setBulkCarat(0);
+        setRows([mkRow(0), mkRow(0), mkRow(0)]);
+        switchMode("quick");
     };
 
-    const buildQuickRows = (): BulkRow[] => [{
-        id: `bulk-quick-${Date.now()}`,
-        categoryId: "",
-        description: quickDesc || "Bulk Gold Purchase",
-        carat: quickCarat,
-        pieces: 1,
-        estimatedGoldWeight: quickWeight,
-        stoneWeight: quickStoneWeight,
-        isBulkPurchase: true,
-    }];
+    const buildQuickRows = (): BulkRow[] => {
+        const adjWt  = kaatPureWeight ?? quickWeight;
+        const kaatWt = kaatPureWeight !== null ? quickWeight - kaatPureWeight : 0;
+        return [{
+            id: `bulk-quick-${Date.now()}`,
+            categoryId: "",
+            description: quickDesc || "Bulk Gold Purchase",
+            carat: quickCarat,
+            pieces: quickPieces,
+            estimatedGoldWeight: quickWeight,
+            grossWeight: quickWeight,
+            adjustedGoldWeight: adjWt,
+            kaatWeight: kaatWt,
+            kaatBasis: localKaatBasis,
+            kaatRate: localKaatRate,
+            stoneWeight: hasStone ? totalStoneWeightG : 0,
+            stoneAmount: hasStone ? totalStoneAmount : 0,
+            goldAmount: quickCalc?.goldAmount ?? 0,
+            labourAmount: quickCalc?.labourAmount ?? 0,
+            totalAmount: quickCalc?.totalAmount ?? 0,
+            notes: [gRatti > 0 ? `Guarantee: ${gRatti} ratti` : "", quickNotes].filter(Boolean).join(" | "),
+            isBulkPurchase: true,
+        }];
+    };
 
     const canConfirmQuick = quickWeight > 0;
     const canConfirmCategorize = validRows.length > 0 && !isOverAllocated;
@@ -191,15 +313,301 @@ export default function BulkEntryPanel({
             ? "var(--success)"
             : "linear-gradient(90deg, var(--gold-dark), var(--gold))";
 
+    const updateStoneRow = (id: string, field: keyof StoneRow, value: unknown) =>
+        setStoneRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+    const removeStoneRow = (id: string) =>
+        setStoneRows(prev => prev.filter(r => r.id !== id));
+
     return (
+        <>
+        {/* ══ Gemstone Modal ══════════════════════════════════════════════════ */}
+        {showStoneModal && (
+            <div style={{
+                position: "fixed", inset: 0, zIndex: 1100,
+                background: "rgba(0,0,0,0.5)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "16px",
+            }}>
+                <div style={{
+                    background: "white", borderRadius: 12,
+                    width: "min(780px, 96vw)", maxHeight: "88vh",
+                    display: "flex", flexDirection: "column",
+                    boxShadow: "0 24px 64px rgba(0,0,0,0.38)",
+                    overflow: "hidden",
+                }}>
+                    {/* Modal header */}
+                    <div style={{
+                        padding: "12px 16px",
+                        background: "linear-gradient(135deg, var(--maroon) 0%, var(--maroon-dark) 100%)",
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Gem size={16} style={{ color: "rgba(250,246,241,0.9)" }} />
+                            <span style={{ color: "var(--text-on-maroon)", fontWeight: 700, fontSize: "0.95rem" }}>Gemstones &amp; Stones</span>
+                            <span style={{ fontSize: "0.7rem", color: "rgba(250,246,241,0.65)", marginLeft: 4 }}>Add each stone separately</span>
+                        </div>
+                        <button onClick={() => setShowStoneModal(false)} style={{
+                            background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6,
+                            color: "white", cursor: "pointer", width: 28, height: 28,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: "1rem", fontWeight: 700, lineHeight: 1,
+                        }}>×</button>
+                    </div>
+
+                    {/* Modal body — Add-row form + table */}
+                    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+
+                        {/* ── Top add-row form (like old software) ── */}
+                        <div style={{ padding: "10px 14px", background: "var(--cream-light)", borderBottom: "1px solid var(--border)" }}>
+                            <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+                                Add New Stone / Gem
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1.8fr 0.5fr 0.9fr 0.7fr 0.8fr 0.8fr auto", gap: 6, alignItems: "end" }}>
+                                {/* Type */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>Stone / Gem Type</label>
+                                    <input className="form-input"
+                                        placeholder="Ruby, Pearl, Emerald…"
+                                        value={stoneDraft.type}
+                                        onChange={e => setStoneDraft(d => ({ ...d, type: e.target.value }))}
+                                        onFocus={sel}
+                                        style={{ fontSize: "0.82rem" }}
+                                    />
+                                </div>
+                                {/* Pcs */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>Pcs</label>
+                                    <input className="form-input" type="number" min={1} step={1}
+                                        value={stoneDraft.pieces || ""}
+                                        onChange={e => setStoneDraft(d => ({ ...d, pieces: Number(e.target.value) }))}
+                                        onFocus={sel}
+                                        placeholder="1"
+                                        style={{ fontFamily: "var(--font-mono)", fontWeight: 600, textAlign: "center" }}
+                                    />
+                                </div>
+                                {/* Weight + unit toggle */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                        <span>Weight</span>
+                                        <span style={{ display: "flex", borderRadius: 3, overflow: "hidden", border: "1px solid var(--border)", fontSize: "0.6rem" }}>
+                                            {(["g", "ct"] as const).map(u => (
+                                                <button key={u} onClick={() => setStoneDraft(d => ({ ...d, unit: u }))} style={{
+                                                    padding: "1px 5px", border: "none", cursor: "pointer",
+                                                    background: stoneDraft.unit === u ? "var(--maroon)" : "var(--cream)",
+                                                    color: stoneDraft.unit === u ? "white" : "var(--text-muted)",
+                                                    fontWeight: stoneDraft.unit === u ? 700 : 400,
+                                                }}>{u === "ct" ? "ct" : "g"}</button>
+                                            ))}
+                                        </span>
+                                    </label>
+                                    <div style={{ position: "relative" }}>
+                                        <input className="form-input" type="number" min={0} step={0.001}
+                                            value={stoneDraft.value || ""}
+                                            onChange={e => setStoneDraft(d => ({ ...d, value: Number(e.target.value) }))}
+                                            onFocus={sel}
+                                            placeholder="0.000"
+                                            style={{ paddingRight: 24, fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                                        />
+                                        <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: "0.62rem", color: "var(--text-muted)" }}>{stoneDraft.unit}</span>
+                                    </div>
+                                </div>
+                                {/* Rate Basis */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>Basis</label>
+                                    <select className="form-select" style={{ fontSize: "0.75rem" }}
+                                        value={stoneDraft.rateBasis}
+                                        onChange={e => setStoneDraft(d => ({ ...d, rateBasis: e.target.value as StoneRateBasis }))}>
+                                        <option value="Per Gram">Per Gram</option>
+                                        <option value="Per Carat">Per Carat</option>
+                                        <option value="Per Piece">Per Piece</option>
+                                        <option value="Lumpsum">Lumpsum</option>
+                                    </select>
+                                </div>
+                                {/* Rate */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>
+                                        Rate ({stoneDraft.rateBasis === "Lumpsum" ? "flat" : stoneDraft.rateBasis === "Per Carat" ? "Rs/ct" : stoneDraft.rateBasis === "Per Piece" ? "Rs/pc" : "Rs/g"})
+                                    </label>
+                                    <input className="form-input" type="number" min={0} step={0.01}
+                                        value={stoneDraft.rate || ""}
+                                        onChange={e => setStoneDraft(d => ({ ...d, rate: Number(e.target.value) }))}
+                                        onFocus={sel}
+                                        placeholder="0"
+                                        style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                                    />
+                                </div>
+                                {/* Preview amount */}
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>Amount</label>
+                                    <div style={{ height: 34, display: "flex", alignItems: "center", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.82rem", color: "var(--maroon)", paddingLeft: 4 }}>
+                                        {(() => {
+                                            const wG  = stoneDraft.unit === "ct" ? stoneDraft.value * 0.2 : stoneDraft.value;
+                                            const wCt = stoneDraft.unit === "g"  ? stoneDraft.value / 0.2 : stoneDraft.value;
+                                            const amt = stoneDraft.rateBasis === "Per Carat" ? wCt * stoneDraft.rate :
+                                                        stoneDraft.rateBasis === "Per Gram"  ? wG  * stoneDraft.rate :
+                                                        stoneDraft.rateBasis === "Per Piece" ? stoneDraft.pieces * stoneDraft.rate :
+                                                        stoneDraft.rate;
+                                            return amt > 0 ? `Rs.${amt.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—";
+                                        })()}
+                                    </div>
+                                </div>
+                                {/* Add button */}
+                                <button onClick={() => {
+                                    setStoneRows(p => [...p, { ...stoneDraft, id: `stone-${Date.now()}-${++stoneCounter}` }]);
+                                    setStoneDraft(mkStoneRow());
+                                }} style={{
+                                    height: 34, padding: "0 14px", border: "none", borderRadius: 6,
+                                    background: "var(--maroon)", color: "white", cursor: "pointer",
+                                    fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 5,
+                                    whiteSpace: "nowrap", marginTop: 18,
+                                }}>
+                                    <Plus size={13} /> Add
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* ── Stone table (spreadsheet style, each row editable) ── */}
+                        <div style={{ overflowY: "auto", flex: 1 }}>
+                            {stoneRows.length === 0 ? (
+                                <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "28px 0", fontSize: "0.82rem" }}>
+                                    No stones added yet — fill the form above and click Add
+                                </div>
+                            ) : (
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
+                                    <thead>
+                                        <tr style={{ background: "var(--cream-light)", borderBottom: "2px solid var(--border)" }}>
+                                            {["S.No", "Type", "Pcs", "Weight", "Unit", "Basis", "Rate", "Amount", ""].map(h => (
+                                                <th key={h} style={{ padding: "6px 8px", textAlign: h === "Amount" || h === "Rate" ? "right" : "left", fontWeight: 700, fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {stoneRows.map((sr, idx) => {
+                                            const srWeightG  = sr.unit === "ct" ? sr.value * 0.2 : sr.value;
+                                            const srWeightCt = sr.unit === "g"  ? sr.value / 0.2 : sr.value;
+                                            const srAmount =
+                                                sr.rateBasis === "Per Carat" ? srWeightCt * sr.rate :
+                                                sr.rateBasis === "Per Gram"  ? srWeightG  * sr.rate :
+                                                sr.rateBasis === "Per Piece" ? sr.pieces  * sr.rate :
+                                                sr.rate;
+                                            const isEditing = editingStoneId === sr.id;
+                                            const rowBg = isEditing ? "rgba(92,10,10,0.04)" : idx % 2 === 0 ? "white" : "var(--cream-light)";
+                                            return (
+                                                <tr key={sr.id} style={{ background: rowBg, borderBottom: "1px solid var(--border)" }}>
+                                                    {/* S.No */}
+                                                    <td style={{ padding: "4px 8px", color: "var(--text-muted)", fontWeight: 600, width: 36 }}>{idx + 1}</td>
+                                                    {/* Type */}
+                                                    <td style={{ padding: "4px 6px", minWidth: 100 }}>
+                                                        {isEditing
+                                                            ? <input className="form-input" value={sr.type} onChange={e => updateStoneRow(sr.id, "type", e.target.value)} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
+                                                            : <span style={{ cursor: "pointer" }} onClick={() => setEditingStoneId(sr.id)}>{sr.type || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Pcs */}
+                                                    <td style={{ padding: "4px 6px", width: 52 }}>
+                                                        {isEditing
+                                                            ? <input className="form-input" type="number" min={1} value={sr.pieces || ""} onChange={e => updateStoneRow(sr.id, "pieces", Number(e.target.value))} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28, width: 48, textAlign: "center" }} />
+                                                            : <span style={{ cursor: "pointer" }} onClick={() => setEditingStoneId(sr.id)}>{sr.pieces}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Weight */}
+                                                    <td style={{ padding: "4px 6px", width: 80 }}>
+                                                        {isEditing
+                                                            ? <input className="form-input" type="number" min={0} step={0.001} value={sr.value || ""} onChange={e => updateStoneRow(sr.id, "value", Number(e.target.value))} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28, width: 74, fontFamily: "var(--font-mono)" }} />
+                                                            : <span style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }} onClick={() => setEditingStoneId(sr.id)}>{sr.value > 0 ? sr.value.toFixed(3) : "—"}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Unit toggle */}
+                                                    <td style={{ padding: "4px 6px", width: 58 }}>
+                                                        <span style={{ display: "inline-flex", borderRadius: 3, overflow: "hidden", border: "1px solid var(--border)", fontSize: "0.62rem" }}>
+                                                            {(["g", "ct"] as const).map(u => (
+                                                                <button key={u} onClick={() => updateStoneRow(sr.id, "unit", u)} style={{
+                                                                    padding: "2px 5px", border: "none", cursor: "pointer",
+                                                                    background: sr.unit === u ? "var(--maroon)" : "transparent",
+                                                                    color: sr.unit === u ? "white" : "var(--text-muted)",
+                                                                    fontWeight: sr.unit === u ? 700 : 400,
+                                                                }}>{u}</button>
+                                                            ))}
+                                                        </span>
+                                                    </td>
+                                                    {/* Basis */}
+                                                    <td style={{ padding: "4px 6px", width: 90 }}>
+                                                        {isEditing
+                                                            ? <select className="form-select" value={sr.rateBasis} onChange={e => updateStoneRow(sr.id, "rateBasis", e.target.value as StoneRateBasis)} style={{ fontSize: "0.72rem", padding: "2px 4px", height: 28 }}>
+                                                                {(["Per Gram", "Per Carat", "Per Piece", "Lumpsum"] as StoneRateBasis[]).map(b => <option key={b} value={b}>{b}</option>)}
+                                                              </select>
+                                                            : <span style={{ cursor: "pointer", fontSize: "0.72rem", color: "var(--text-secondary)" }} onClick={() => setEditingStoneId(sr.id)}>{sr.rateBasis}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Rate */}
+                                                    <td style={{ padding: "4px 6px", textAlign: "right", width: 72 }}>
+                                                        {isEditing
+                                                            ? <input className="form-input" type="number" min={0} value={sr.rate || ""} onChange={e => updateStoneRow(sr.id, "rate", Number(e.target.value))} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28, width: 66, fontFamily: "var(--font-mono)", textAlign: "right" }} />
+                                                            : <span style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }} onClick={() => setEditingStoneId(sr.id)}>{sr.rate > 0 ? sr.rate.toLocaleString("en-PK") : "—"}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Amount */}
+                                                    <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--maroon)", width: 80 }}>
+                                                        {srAmount > 0 ? `Rs.${srAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—"}
+                                                    </td>
+                                                    {/* Actions */}
+                                                    <td style={{ padding: "4px 6px", width: 60 }}>
+                                                        <div style={{ display: "flex", gap: 3 }}>
+                                                            {isEditing
+                                                                ? <button onClick={() => setEditingStoneId(null)} style={{ padding: "2px 7px", border: "1px solid var(--success)", borderRadius: 4, background: "transparent", color: "var(--success)", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700 }}>✓</button>
+                                                                : <button onClick={() => setEditingStoneId(sr.id)} style={{ padding: "2px 7px", border: "1px solid var(--border)", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: "0.72rem" }}>Edit</button>
+                                                            }
+                                                            <button onClick={() => { removeStoneRow(sr.id); if (editingStoneId === sr.id) setEditingStoneId(null); }} style={{ padding: "2px 5px", border: "none", borderRadius: 4, background: "transparent", color: "var(--danger)", cursor: "pointer" }}>
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Modal footer — totals + Done */}
+                    <div style={{
+                        padding: "10px 16px",
+                        borderTop: "2px solid var(--gold-light)",
+                        background: "var(--cream-light)",
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                    }}>
+                        <div style={{ display: "flex", gap: 20 }}>
+                            <div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Total Stones</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.95rem", color: "var(--text-secondary)" }}>
+                                    {stoneRows.reduce((s, r) => s + r.pieces, 0)} pcs · {totalStoneWeightCt.toFixed(2)} ct / {totalStoneWeightG.toFixed(3)} g
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Total Amount</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.95rem", color: "var(--maroon)" }}>
+                                    Rs. {totalStoneAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                </div>
+                            </div>
+                        </div>
+                        <button className="btn btn-primary" onClick={() => setShowStoneModal(false)} style={{ minWidth: 90 }}>
+                            Done
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <div className="card animate-fade-in" style={{ display: "flex", flexDirection: "column" }}>
             {/* ── Header ── */}
             <div className="card-header" style={{
-                padding: "10px 16px",
+                padding: "9px 14px",
                 background: "linear-gradient(135deg, var(--maroon) 0%, var(--maroon-dark) 100%)",
                 borderBottom: "none",
             }}>
-                <h3 style={{ color: "var(--text-on-maroon)", display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem" }}>
+                <h3 style={{ color: "var(--text-on-maroon)", display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem" }}>
                     <PackagePlus size={15} />
                     Bulk Gold Purchase Entry
                 </h3>
@@ -211,175 +619,395 @@ export default function BulkEntryPanel({
                     { key: "quick" as const, Icon: Zap, label: "Quick Entry", sub: "Record full bulk as 1 item" },
                     { key: "categorize" as const, Icon: LayoutList, label: "Categorize", sub: "Split into rings, necklaces…" },
                 ] as const).map(tab => (
-                    <button key={tab.key} onClick={() => setMode(tab.key)} style={{
-                        flex: 1, padding: "8px 12px",
+                    <button key={tab.key} onClick={() => switchMode(tab.key)} style={{
+                        flex: 1, padding: "7px 12px",
                         border: "none",
                         borderBottom: mode === tab.key ? "2px solid var(--maroon)" : "2px solid transparent",
                         background: "transparent",
                         color: mode === tab.key ? "var(--maroon)" : "var(--text-muted)",
                         fontWeight: mode === tab.key ? 700 : 500,
-                        fontSize: "0.75rem",
+                        fontSize: "0.8rem",
                         cursor: "pointer",
                         display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
                         transition: "all var(--t-fast)",
                     }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            <tab.Icon size={12} />
+                            <tab.Icon size={13} />
                             {tab.label}
                         </div>
-                        <div style={{ fontSize: "0.5625rem", opacity: 0.65 }}>{tab.sub}</div>
+                        <div style={{ fontSize: "0.6rem", opacity: 0.65 }}>{tab.sub}</div>
                     </button>
                 ))}
             </div>
 
-            {/* ── QUICK ENTRY ── */}
+            {/* ══════════════════════════════════════════════════════════
+                QUICK ENTRY
+            ══════════════════════════════════════════════════════════ */}
             {mode === "quick" && (
-                <div style={{ padding: "16px 18px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                        <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                            <label className="form-label">Description</label>
-                            <input className="form-input"
-                                placeholder="e.g. Bulk Gold Stock — Batch #12"
-                                value={quickDesc}
-                                onChange={e => setQuickDesc(e.target.value)}
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Total Gold Weight (g)</label>
+                <div style={{ padding: "12px 14px", overflowY: "auto" }}>
+
+                    {/* 1. Description */}
+                    <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label className="form-label" style={{ fontSize: "0.8rem" }}>Description</label>
+                        <input className="form-input"
+                            placeholder="e.g. Bulk Gold Stock — Batch #12"
+                            value={quickDesc}
+                            onChange={e => setQuickDesc(e.target.value)}
+                            onFocus={sel}
+                            style={{ fontSize: "0.9rem" }}
+                        />
+                    </div>
+
+                    {/* 2. Weight + Pcs + Rate — always 3-column */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Gold Weight (g)</label>
                             <div style={{ position: "relative" }}>
                                 <input className="form-input" type="number" min={0} step={0.001}
                                     value={quickWeight || ""}
                                     onChange={e => setQuickWeight(Number(e.target.value))}
+                                    onFocus={sel}
                                     placeholder="0.000"
-                                    style={{ paddingRight: 28, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "1rem" }}
+                                    style={{ paddingRight: 26, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem" }}
                                 />
-                                <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: "0.7rem", color: "var(--text-muted)" }}>g</span>
+                                <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: "0.7rem", color: "var(--text-muted)" }}>g</span>
                             </div>
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Gold Purity (Carat)</label>
-                            <input className="form-input" type="number" min={1} max={24} step={0.1}
-                                value={quickCarat}
-                                onChange={e => setQuickCarat(Number(e.target.value))}
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>PCS</label>
+                            <input className="form-input" type="number" min={1} step={1}
+                                value={quickPieces || ""}
+                                onChange={e => setQuickPieces(Number(e.target.value))}
+                                onFocus={sel}
+                                placeholder="1"
+                                style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem", textAlign: "center" }}
                             />
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Stone / Gem Weight (g)</label>
-                            <input className="form-input" type="number" min={0} step={0.001}
-                                value={quickStoneWeight || ""}
-                                placeholder="0.000"
-                                onChange={e => setQuickStoneWeight(Number(e.target.value))}
-                            />
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Rate (Rs/Tola)</label>
+                            <div style={{ position: "relative" }}>
+                                <input className="form-input" type="number" min={0} step={100}
+                                    value={quickLocalRate || ""}
+                                    onChange={e => setQuickLocalRate(Number(e.target.value))}
+                                    onFocus={sel}
+                                    placeholder="e.g. 270000"
+                                    style={{ paddingRight: 32, fontFamily: "var(--font-mono)", fontSize: "0.875rem" }}
+                                />
+                                <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: "0.65rem", color: "var(--text-muted)" }}>Rs</span>
+                            </div>
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Notes / Reference</label>
-                            <input className="form-input"
-                                placeholder="Supplier ref, lot #, etc."
-                                value={quickNotes}
-                                onChange={e => setQuickNotes(e.target.value)}
+                    </div>
+
+                    {/* 3. Purity & Kaat */}
+                    <div style={{ padding: "8px 10px", background: "var(--cream-light)", border: "1px solid var(--gold-light)", borderRadius: 8, marginBottom: 8 }}>
+                        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+                            Purity &amp; Kaat
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.78rem" }}>Carat</label>
+                                <input className="form-input" type="number" min={0} max={24} step={0.5}
+                                    value={quickCarat || ""}
+                                    onChange={e => setQuickCarat(Number(e.target.value))}
+                                    onFocus={sel}
+                                    placeholder="e.g. 21"
+                                    style={{ fontSize: "0.9rem", fontFamily: "var(--font-mono)", fontWeight: 700 }}
+                                />
+                                {quickCarat > 0 && (
+                                    <div style={{ marginTop: 2, fontSize: "0.68rem", color: "var(--gold-dark)", fontWeight: 600 }}>
+                                        {((quickCarat / 24) * 100).toFixed(1)}% pure
+                                    </div>
+                                )}
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.78rem" }}>Kaat Basis</label>
+                                <select className="form-select" style={{ fontSize: "0.8rem" }}
+                                    value={localKaatBasis}
+                                    onChange={e => setLocalKaatBasis(e.target.value as LocalKaatBasis)}>
+                                    <option value="None">Pasa (No Kaat)</option>
+                                    <option value="Ratti Kaat">Ratti Kaat</option>
+                                    <option value="Direct Weight">Carat-Based</option>
+                                    <option value="Purity">Purity</option>
+                                </select>
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.78rem" }}>
+                                    {localKaatBasis === "Ratti Kaat" ? "Ratti Count"
+                                    : localKaatBasis === "Purity" ? "Purity %  (e.g. 88 → 200×0.88=176)"
+                                    : localKaatBasis === "Direct Weight" ? "— (auto from Carat)"
+                                    : "— (Pasa, no deduction)"}
+                                </label>
+                                <input className="form-input" type="number" min={0}
+                                    step={0.1}
+                                    max={localKaatBasis === "Purity" ? 100 : undefined}
+                                    value={localKaatRate || ""}
+                                    onChange={e => setLocalKaatRate(Number(e.target.value))}
+                                    onFocus={sel}
+                                    placeholder={
+                                        localKaatBasis === "Direct Weight" ? "—"
+                                        : localKaatBasis === "Purity" ? "e.g. 88"
+                                        : localKaatBasis === "None" ? "—"
+                                        : "0"
+                                    }
+                                    disabled={localKaatBasis === "Direct Weight" || localKaatBasis === "None"}
+                                    style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem", opacity: (localKaatBasis === "Direct Weight" || localKaatBasis === "None") ? 0.4 : 1 }}
+                                />
+                            </div>
+                        </div>
+                        {kaatPureWeight !== null && quickWeight > 0 && (
+                            <div style={{ marginTop: 7, display: "flex", alignItems: "center", gap: 8, fontSize: "0.78rem" }}>
+                                <span style={{ color: "var(--text-muted)" }}>{quickWeight.toFixed(3)} g</span>
+                                <span style={{ color: "var(--text-muted)" }}>−</span>
+                                <span style={{ color: "var(--danger)", fontWeight: 600 }}>{(quickWeight - kaatPureWeight).toFixed(3)} g {localKaatBasis === "Direct Weight" ? "pasa" : localKaatBasis === "Purity" ? "deducted" : "kaat"}</span>
+                                <span style={{ color: "var(--text-muted)" }}>=</span>
+                                <span style={{ color: "var(--success)", fontWeight: 800, fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>{kaatPureWeight.toFixed(3)} g pure</span>
+                                {localKaatBasis === "Ratti Kaat" && localKaatRate > 0 && (
+                                    <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)" }}>Wt × (96−{localKaatRate}) / 96</span>
+                                )}
+                                {localKaatBasis === "Purity" && localKaatRate > 0 && (
+                                    <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)" }}>{quickWeight} × {(localKaatRate / 100).toFixed(3)} = {(quickWeight * localKaatRate / 100).toFixed(3)} g</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 4. Labour */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Labour Basis</label>
+                            <select className="form-select" value={localLabourBasis} onChange={e => setLocalLabourBasis(e.target.value as LocalLabourBasis)}>
+                                <option value="Per Tola">Per Tola</option>
+                                <option value="Per Gram">Per Gram</option>
+                                <option value="Per Piece">Per Piece</option>
+                                <option value="Lump Sum">Lump Sum</option>
+                            </select>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>
+                                Labour Rate {localLabourBasis === "Per Tola" ? "(Rs/Tola)" : localLabourBasis === "Per Gram" ? "(Rs/g)" : localLabourBasis === "Per Piece" ? "(Rs/Pc)" : "(Rs flat)"}
+                            </label>
+                            <input className="form-input" type="number" min={0} step={1}
+                                value={localLabourRate || ""}
+                                onChange={e => setLocalLabourRate(Number(e.target.value))}
+                                onFocus={sel}
+                                placeholder="0"
+                                style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
                             />
                         </div>
                     </div>
 
-                    {quickWeight > 0 && (
+                    {/* 5. Supplier Guarantee — ratti kaat only, no verification */}
+                    <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label className="form-label" style={{ fontSize: "0.8rem" }}>Guaranteed Ratti Kaat (Supplier's claim)</label>
+                        <input className="form-input" type="number" min={0} step={0.5}
+                            value={gRatti || ""}
+                            onChange={e => setGRatti(Number(e.target.value))}
+                            onFocus={sel}
+                            placeholder="e.g. 12"
+                            style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                        />
+                    </div>
+
+                    {/* 6. Stone / Gemstone — checkbox opens modal for multi-stone entry */}
+                    <div style={{ marginBottom: 8 }}>
                         <div style={{
-                            background: "var(--cream-light)",
-                            border: "1px solid var(--gold-light)",
-                            borderRadius: 10,
-                            padding: "12px 14px",
+                            display: "flex", alignItems: "center",
+                            padding: "7px 10px",
+                            background: hasStone ? "rgba(92,10,10,0.05)" : "var(--cream-light)",
+                            border: `1px solid ${hasStone ? "var(--maroon)" : "var(--border)"}`,
+                            borderRadius: 8,
+                            gap: 8,
                         }}>
-                            <div style={{ fontSize: "0.575rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-                                Purchase Preview
+                            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", flex: 1 }}>
+                                <input type="checkbox"
+                                    checked={hasStone}
+                                    onChange={e => {
+                                        const checked = e.target.checked;
+                                        setHasStone(checked);
+                                        if (checked) {
+                                            if (stoneRows.length === 0) setStoneRows([mkStoneRow()]);
+                                            setShowStoneModal(true);
+                                        } else {
+                                            setStoneRows([]);
+                                        }
+                                    }}
+                                    style={{ width: 15, height: 15, cursor: "pointer", accentColor: "var(--maroon)" }}
+                                />
+                                <Gem size={14} style={{ color: hasStone ? "var(--maroon)" : "var(--text-muted)" }} />
+                                <span style={{ fontSize: "0.85rem", fontWeight: 600, color: hasStone ? "var(--maroon)" : "var(--text-secondary)" }}>
+                                    Gemstone / Stone purchased
+                                </span>
+                            </label>
+                            {!hasStone && (
+                                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>tick to add details</span>
+                            )}
+                            {hasStone && (
+                                <button onClick={() => setShowStoneModal(true)} style={{
+                                    background: "var(--maroon)", border: "none", borderRadius: 6,
+                                    color: "white", cursor: "pointer", padding: "3px 10px",
+                                    fontSize: "0.75rem", fontWeight: 600, whiteSpace: "nowrap",
+                                    display: "flex", alignItems: "center", gap: 5,
+                                }}>
+                                    <Gem size={11} />
+                                    {stoneRows.length > 0
+                                        ? `${stoneRows.reduce((s, r) => s + r.pieces, 0)} pcs · ${totalStoneWeightG.toFixed(2)} g · Rs. ${totalStoneAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })} · Edit`
+                                        : "Add Stones"}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* 6. Notes */}
+                    <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label className="form-label" style={{ fontSize: "0.8rem" }}>Notes / Reference (internal)</label>
+                        <input className="form-input"
+                            placeholder="Supplier ref, lot #, etc."
+                            value={quickNotes}
+                            onChange={e => setQuickNotes(e.target.value)}
+                            onFocus={sel}
+                            style={{ fontSize: "0.875rem" }}
+                        />
+                    </div>
+
+                    {/* 8. Total Summary — weight breakdown + charges */}
+                    {quickCalc && quickWeight > 0 && (
+                        <div style={{
+                            marginTop: 8, padding: "10px 12px",
+                            background: "linear-gradient(135deg, rgba(92,10,10,0.04), rgba(201,168,76,0.06))",
+                            border: "1px solid var(--gold-light)", borderRadius: 8,
+                        }}>
+                            <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+                                Calculation Summary
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                {/* Weight rows */}
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
+                                    <span style={{ color: "var(--text-muted)" }}>Gold Weight (Gross)</span>
+                                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontWeight: 600 }}>
+                                        {quickWeight.toFixed(3)} g
+                                    </span>
+                                </div>
+                                {kaatDeduction > 0 && (
+                                    <>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "0.78rem" }}>
+                                            <span style={{ color: "var(--danger)" }}>
+                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : localKaatBasis === "Direct Weight" ? `Carat-Based (${((quickCarat / 24) * 100).toFixed(1)}%)` : `Purity ${localKaatRate}%`})
+                                            </span>
+                                            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                                                <span style={{ fontFamily: "var(--font-mono)", color: "var(--danger)", fontWeight: 600 }}>
+                                                    − {kaatDeduction.toFixed(3)} g
+                                                </span>
+                                                <span style={{ fontFamily: "var(--font-mono)", color: "var(--danger)", fontSize: "0.68rem", opacity: 0.85 }}>
+                                                    = −Rs. {(kaatDeduction * goldRatePerGram).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                                </span>
+                                            </span>
+                                        </div>
+                                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", borderBottom: "1px dashed var(--border)", paddingBottom: 4, marginBottom: 2 }}>
+                                            <span style={{ color: "var(--success)", fontWeight: 700 }}>Net Gold Weight</span>
+                                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--success)", fontWeight: 800 }}>
+                                                {kaatPureWeight!.toFixed(3)} g
+                                            </span>
+                                        </div>
+                                    </>
+                                )}
+                                {/* Amount rows */}
                                 {[
-                                    { label: "Pure Gold", value: `${quickPureGold.toFixed(3)} g`, color: "var(--success)" },
-                                    { label: "Alloy", value: `${quickAlloy.toFixed(3)} g`, color: "var(--text-secondary)" },
-                                    { label: "Purity", value: `${(quickPurity * 100).toFixed(1)}%`, color: "var(--gold-dark)" },
-                                    {
-                                        label: "Est. Amount",
-                                        value: quickCalc ? `Rs. ${quickCalc.totalAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—",
-                                        color: "var(--maroon)",
-                                    },
-                                ].map(s => (
-                                    <div key={s.label} style={{ background: "white", borderRadius: 6, padding: "6px 10px", border: "1px solid rgba(0,0,0,0.05)" }}>
-                                        <div style={{ fontSize: "0.5rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
-                                        <div style={{ fontSize: "0.875rem", fontWeight: 800, color: s.color, fontFamily: "var(--font-mono)", marginTop: 2 }}>{s.value}</div>
+                                    { label: "Gold Value", value: quickCalc.goldAmount, show: true },
+                                    { label: "Labour", value: quickCalc.labourAmount, show: (quickCalc.labourAmount ?? 0) !== 0 },
+                                ].filter(r => r.show).map(r => (
+                                    <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
+                                        <span style={{ color: "var(--text-muted)" }}>{r.label}</span>
+                                        <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
+                                            Rs. {(r.value ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                        </span>
                                     </div>
                                 ))}
-                            </div>
-                            <div style={{ marginTop: 10, fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 5 }}>
-                                <PackagePlus size={11} />
-                                Added as 1 line item. Categorise into rings, necklaces etc. later.
+                                {hasStone && totalStoneAmount > 0 && (
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", alignItems: "flex-end" }}>
+                                        <span style={{ color: "var(--text-muted)" }}>Stone / Gem</span>
+                                        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                                            <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                                {totalStoneWeightCt.toFixed(2)} ct &nbsp;/&nbsp; {totalStoneWeightG.toFixed(3)} g
+                                            </span>
+                                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
+                                                Rs. {totalStoneAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                            </span>
+                                        </span>
+                                    </div>
+                                )}
+                                <div style={{ borderTop: "1px solid var(--gold-light)", marginTop: 3, paddingTop: 4, display: "flex", justifyContent: "space-between" }}>
+                                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--maroon)" }}>Total</span>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--maroon)" }}>
+                                        Rs. {quickCalc.totalAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* ── CATEGORIZE MODE ── */}
+            {/* ══════════════════════════════════════════════════════════
+                CATEGORIZE MODE
+            ══════════════════════════════════════════════════════════ */}
             {mode === "categorize" && (
                 <>
-                    {/* Bulk header */}
-                    <div style={{ padding: "12px 18px", background: "var(--cream-light)", borderBottom: "1px solid var(--border)" }}>
-                        <div style={{ fontSize: "0.575rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 8 }}>
+                    {/* Bulk header — removed Purity field */}
+                    <div style={{ padding: "10px 14px", background: "var(--cream-light)", borderBottom: "1px solid var(--border)" }}>
+                        <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 6 }}>
                             Total Bulk Weight
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
-                            <div className="form-group">
-                                <label className="form-label">Total Weight (g)</label>
+                        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr auto", gap: 8, alignItems: "end" }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.8rem" }}>Total Weight (g)</label>
                                 <div style={{ position: "relative" }}>
                                     <input className="form-input" type="number" min={0} step={0.001}
                                         value={totalBulkWeight || ""}
                                         onChange={e => setTotalBulkWeight(Number(e.target.value))}
+                                        onFocus={sel}
                                         placeholder="e.g. 500.000"
-                                        style={{ paddingRight: 36, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem" }}
+                                        style={{ paddingRight: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem" }}
                                     />
-                                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-muted)" }}>g</span>
+                                    <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", fontSize: "0.75rem", fontWeight: 600, color: "var(--text-muted)" }}>g</span>
                                 </div>
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Carat</label>
-                                <input className="form-input" type="number" min={1} max={24} step={0.1}
-                                    value={bulkCarat}
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.8rem" }}>Carat</label>
+                                <input className="form-input" type="number" min={1} max={24} step={0.5}
+                                    value={bulkCarat || ""}
                                     onChange={e => setBulkCarat(Number(e.target.value))}
+                                    onFocus={sel}
+                                    style={{ fontSize: "0.9rem" }}
                                 />
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Purity</label>
-                                <input className="form-input" readOnly
-                                    value={(bulkCarat / 24).toFixed(4)}
-                                    style={{ background: "var(--cream)", fontFamily: "var(--font-mono)" }}
-                                />
-                            </div>
-                            <button className="btn btn-ghost btn-sm" onClick={applyBulkCarat} style={{ whiteSpace: "nowrap" }}>
+                            <button className="btn btn-ghost btn-sm" onClick={applyBulkCarat} style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>
                                 <Scale size={13} /> Apply to All
                             </button>
                         </div>
                     </div>
 
                     {/* Allocation tracker */}
-                    <div style={{ padding: "10px 18px", background: "white", borderBottom: "1px solid var(--border)" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 8 }}>
+                    <div style={{ padding: "8px 14px", background: "white", borderBottom: "1px solid var(--border)" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 6 }}>
                             {[
                                 { label: "Total Bulk", value: totalBulkWeight > 0 ? `${totalBulkWeight.toFixed(3)} g` : "— g", color: "var(--text-secondary)" },
                                 { label: "Allocated", value: `${allocatedWeight.toFixed(3)} g`, color: "var(--maroon)" },
                                 { label: "Remaining", value: totalBulkWeight > 0 ? `${Math.abs(remainingWeight).toFixed(3)} g` : "— g", color: isOverAllocated ? "var(--danger)" : isFullyAllocated ? "var(--success)" : "var(--warning)" },
                                 { label: "Allocated %", value: totalBulkWeight > 0 ? `${allocationPct.toFixed(1)}%` : "0%", color: isFullyAllocated ? "var(--success)" : isOverAllocated ? "var(--danger)" : "var(--gold-dark)" },
                             ].map(stat => (
-                                <div key={stat.label} style={{ background: "var(--cream-light)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px" }}>
-                                    <div style={{ fontSize: "0.5625rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>{stat.label}</div>
-                                    <div style={{ fontSize: "0.9rem", fontWeight: 800, color: stat.color, fontFamily: "var(--font-mono)", marginTop: 2 }}>{stat.value}</div>
+                                <div key={stat.label} style={{ background: "var(--cream-light)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 9px" }}>
+                                    <div style={{ fontSize: "0.55rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>{stat.label}</div>
+                                    <div style={{ fontSize: "0.875rem", fontWeight: 800, color: stat.color, fontFamily: "var(--font-mono)", marginTop: 2 }}>{stat.value}</div>
                                 </div>
                             ))}
                         </div>
-                        <div style={{ background: "var(--cream-dark)", borderRadius: 99, height: 8, overflow: "hidden" }}>
+                        <div style={{ background: "var(--cream-dark)", borderRadius: 99, height: 7, overflow: "hidden" }}>
                             <div style={{ width: `${allocationPct}%`, height: "100%", background: barColor, borderRadius: 99, transition: "width 300ms ease" }} />
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 5 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.75rem", fontWeight: 500 }}>
-                                {isOverAllocated && (<><AlertTriangle size={13} style={{ color: "var(--danger)" }} /><span style={{ color: "var(--danger)" }}>Over by {(allocatedWeight - totalBulkWeight).toFixed(3)} g</span></>)}
-                                {isFullyAllocated && (<><CheckCircle2 size={13} style={{ color: "var(--success)" }} /><span style={{ color: "var(--success)" }}>All {totalBulkWeight.toFixed(3)} g categorised</span></>)}
+                                {isOverAllocated && (<><AlertTriangle size={12} style={{ color: "var(--danger)" }} /><span style={{ color: "var(--danger)" }}>Over by {(allocatedWeight - totalBulkWeight).toFixed(3)} g</span></>)}
+                                {isFullyAllocated && (<><CheckCircle2 size={12} style={{ color: "var(--success)" }} /><span style={{ color: "var(--success)" }}>All {totalBulkWeight.toFixed(3)} g categorised</span></>)}
                                 {!isOverAllocated && !isFullyAllocated && totalBulkWeight > 0 && (<span style={{ color: "var(--text-muted)" }}>{remainingWeight.toFixed(3)} g remaining</span>)}
                             </div>
                             {remainingWeight > 0.001 && !isOverAllocated && (
@@ -388,97 +1016,103 @@ export default function BulkEntryPanel({
                         </div>
                     </div>
 
-                    {/* Table */}
+                    {/* Table — new columns: Gross Wt, Notes; removed Purity */}
                     <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                             <thead>
                                 <tr style={{ background: "linear-gradient(180deg, var(--maroon-light), var(--maroon))", color: "rgba(250,246,241,0.95)", position: "sticky", top: 0, zIndex: 2 }}>
-                                    {["#", "Category", "Description", "Pcs", "Carat", "Gold Wt (g)", "Stone Wt (g)", "Est. Amount", ""].map(h => (
-                                        <th key={h} style={{ padding: "9px 10px", textAlign: "left", fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", borderRight: "1px solid rgba(255,255,255,0.07)" }}>{h}</th>
+                                    {["#", "Category", "Description", "Pcs", "Carat", "Gross Wt (g)", "Gold Wt (g)", "Stone Wt (g)", "Notes", ""].map(h => (
+                                        <th key={h} style={{ padding: "8px 9px", textAlign: "left", fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", borderRight: "1px solid rgba(255,255,255,0.07)" }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {rows.map((row, idx) => {
-                                    const calc = row.estimatedGoldWeight > 0
-                                        ? calculateLineItem({
-                                            transactionType: "PURCHASE",
-                                            estimatedGoldWeight: row.estimatedGoldWeight,
-                                            carat: row.carat,
-                                            goldRatePerGram,
-                                            polishRate, polishBasis,
-                                            labourRate, labourBasis,
-                                            kaatBasis, kaatRate,
-                                            stoneWeight: row.stoneWeight,
-                                            beadsWeight: 0, diamondWeight: 0,
-                                            stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
-                                        })
-                                        : null;
                                     const rowPct = totalBulkWeight > 0 && row.estimatedGoldWeight > 0
                                         ? (row.estimatedGoldWeight / totalBulkWeight * 100).toFixed(1)
                                         : null;
                                     return (
                                         <tr key={row.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.05)", background: idx % 2 === 0 ? "white" : "rgba(251,245,238,0.4)" }}>
-                                            <td style={{ padding: "5px 10px", color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 600, textAlign: "center" }}>{idx + 1}</td>
-                                            <td style={{ padding: "5px 6px", minWidth: 140 }}>
-                                                <select className="form-select" style={{ height: 32, fontSize: "0.75rem" }}
+                                            <td style={{ padding: "4px 9px", color: "var(--text-muted)", fontSize: "0.75rem", fontWeight: 600, textAlign: "center" }}>{idx + 1}</td>
+                                            <td style={{ padding: "4px 5px", minWidth: 130 }}>
+                                                <select className="form-select" style={{ height: 30, fontSize: "0.75rem" }}
                                                     value={row.categoryId}
                                                     onChange={e => update(row.id, "categoryId", e.target.value)}>
                                                     <option value="">Select…</option>
                                                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                                 </select>
                                             </td>
-                                            <td style={{ padding: "5px 6px", minWidth: 180 }}>
-                                                <input className="form-input" style={{ height: 32, fontSize: "0.75rem" }}
+                                            <td style={{ padding: "4px 5px", minWidth: 160 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.75rem" }}
                                                     placeholder="e.g. Gold Rings 21K…"
                                                     value={row.description}
+                                                    onFocus={sel}
                                                     onChange={e => update(row.id, "description", e.target.value)}
                                                 />
                                             </td>
-                                            <td style={{ padding: "5px 6px", width: 64 }}>
-                                                <input className="form-input" style={{ height: 32, fontSize: "0.75rem", width: 60 }}
+                                            <td style={{ padding: "4px 5px", width: 58 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.75rem", width: 54 }}
                                                     type="number" min={0}
-                                                    value={row.pieces}
+                                                    value={row.pieces || ""}
+                                                    onFocus={sel}
                                                     onChange={e => update(row.id, "pieces", Number(e.target.value))}
                                                 />
                                             </td>
-                                            <td style={{ padding: "5px 6px", width: 72 }}>
-                                                <input className="form-input" style={{ height: 32, fontSize: "0.75rem", width: 68 }}
-                                                    type="number" min={1} max={24} step={0.1}
-                                                    value={row.carat}
+                                            <td style={{ padding: "4px 5px", width: 68 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.75rem", width: 64 }}
+                                                    type="number" min={0} max={24} step={0.5}
+                                                    value={row.carat || ""}
+                                                    placeholder="21"
+                                                    onFocus={sel}
                                                     onChange={e => update(row.id, "carat", Number(e.target.value))}
                                                 />
                                             </td>
-                                            <td style={{ padding: "5px 6px", width: 130 }}>
+                                            <td style={{ padding: "4px 5px", width: 110 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.8rem", fontFamily: "var(--font-mono)" }}
+                                                    type="number" min={0} step={0.001}
+                                                    value={row.grossWeight || ""}
+                                                    placeholder="0.000"
+                                                    onFocus={sel}
+                                                    onChange={e => update(row.id, "grossWeight", Number(e.target.value))}
+                                                />
+                                            </td>
+                                            <td style={{ padding: "4px 5px", width: 120 }}>
                                                 <div style={{ position: "relative" }}>
                                                     <input className="form-input"
-                                                        style={{ height: 32, fontSize: "0.8rem", fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                                                        style={{ height: 30, fontSize: "0.8rem", fontFamily: "var(--font-mono)", fontWeight: 600 }}
                                                         type="number" min={0} step={0.001}
                                                         value={row.estimatedGoldWeight || ""}
                                                         placeholder="0.000"
+                                                        onFocus={sel}
                                                         onChange={e => update(row.id, "estimatedGoldWeight", Number(e.target.value))}
                                                     />
                                                     {rowPct && (
-                                                        <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: "0.5rem", fontWeight: 700, color: "var(--gold-dark)", background: "rgba(201,168,76,0.12)", padding: "1px 4px", borderRadius: 3, pointerEvents: "none" }}>
+                                                        <span style={{ position: "absolute", right: 5, top: "50%", transform: "translateY(-50%)", fontSize: "0.5rem", fontWeight: 700, color: "var(--gold-dark)", background: "rgba(201,168,76,0.12)", padding: "1px 3px", borderRadius: 3, pointerEvents: "none" }}>
                                                             {rowPct}%
                                                         </span>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: "5px 6px", width: 110 }}>
-                                                <input className="form-input" style={{ height: 32, fontSize: "0.75rem" }}
+                                            <td style={{ padding: "4px 5px", width: 100 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.75rem" }}
                                                     type="number" min={0} step={0.001}
                                                     value={row.stoneWeight || ""}
                                                     placeholder="0.000"
+                                                    onFocus={sel}
                                                     onChange={e => update(row.id, "stoneWeight", Number(e.target.value))}
                                                 />
                                             </td>
-                                            <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "0.75rem", fontWeight: 700, color: calc ? "var(--maroon)" : "var(--text-muted)", whiteSpace: "nowrap" }}>
-                                                {calc ? `Rs. ${calc.totalAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—"}
+                                            <td style={{ padding: "4px 5px", minWidth: 130 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.72rem", color: "var(--text-muted)" }}
+                                                    placeholder="Internal note…"
+                                                    value={row.notes ?? ""}
+                                                    onFocus={sel}
+                                                    onChange={e => update(row.id, "notes", e.target.value)}
+                                                />
                                             </td>
-                                            <td style={{ padding: "5px 6px", textAlign: "center" }}>
+                                            <td style={{ padding: "4px 5px", textAlign: "center" }}>
                                                 <button className="btn btn-icon btn-ghost btn-sm" onClick={() => remove(row.id)} style={{ color: "var(--danger)" }}>
-                                                    <Trash2 size={13} />
+                                                    <Trash2 size={12} />
                                                 </button>
                                             </td>
                                         </tr>
@@ -488,10 +1122,17 @@ export default function BulkEntryPanel({
                             {rows.some(r => r.estimatedGoldWeight > 0) && (
                                 <tfoot>
                                     <tr>
-                                        <td colSpan={5} style={{ padding: "8px 10px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontSize: "0.6875rem", fontWeight: 700, color: "var(--maroon)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Totals</td>
-                                        <td style={{ padding: "8px 10px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontFamily: "var(--font-mono)", fontWeight: 800, color: isOverAllocated ? "var(--danger)" : "var(--maroon)", fontSize: "0.8125rem" }}>{allocatedWeight.toFixed(3)} g</td>
-                                        <td style={{ padding: "8px 10px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-secondary)", fontSize: "0.8125rem" }}>{rows.reduce((s, r) => s + r.stoneWeight, 0).toFixed(3)} g</td>
-                                        <td colSpan={2} style={{ padding: "8px 10px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", textAlign: "right", fontFamily: "var(--font-mono)", fontWeight: 800, color: "var(--maroon)", fontSize: "0.8125rem" }}>—</td>
+                                        <td colSpan={5} style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontSize: "0.6875rem", fontWeight: 700, color: "var(--maroon)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Totals</td>
+                                        <td style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-secondary)", fontSize: "0.8rem" }}>
+                                            {rows.reduce((s, r) => s + (r.grossWeight || 0), 0).toFixed(3)} g
+                                        </td>
+                                        <td style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontFamily: "var(--font-mono)", fontWeight: 800, color: isOverAllocated ? "var(--danger)" : "var(--maroon)", fontSize: "0.8125rem" }}>
+                                            {allocatedWeight.toFixed(3)} g
+                                        </td>
+                                        <td style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-secondary)", fontSize: "0.8rem" }}>
+                                            {rows.reduce((s, r) => s + r.stoneWeight, 0).toFixed(3)} g
+                                        </td>
+                                        <td colSpan={2} style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)" }} />
                                     </tr>
                                 </tfoot>
                             )}
@@ -502,23 +1143,23 @@ export default function BulkEntryPanel({
 
             {/* ── Footer ── */}
             <div style={{
-                padding: "10px 18px",
+                padding: "9px 14px",
                 borderTop: "1px solid var(--border)",
                 background: "var(--cream-light)",
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
             }}>
                 {mode === "categorize" ? (
                     <button className="btn btn-ghost btn-sm" onClick={() => setRows(p => [...p, mkRow(bulkCarat)])}>
                         <Plus size={13} /> Add Row
                     </button>
                 ) : (
-                    <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
                         <Zap size={11} />
                         Quick: adds 1 line item · categorise later
                     </div>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     {onSaveDraft && (
                         <button className="btn btn-ghost btn-sm" onClick={handleSaveDraftAction}
                             disabled={isSaving || !canConfirm}>
@@ -526,7 +1167,6 @@ export default function BulkEntryPanel({
                             {isSaving ? "Saving…" : "Save Draft"}
                         </button>
                     )}
-
                     {onGeneratePdf && (
                         <button className="btn btn-secondary btn-sm" onClick={handleSavePdfAction}
                             disabled={isGenerating || !canConfirm}>
@@ -534,7 +1174,6 @@ export default function BulkEntryPanel({
                             {isGenerating ? "Generating…" : "Save + PDF"}
                         </button>
                     )}
-
                     <button className="btn btn-primary btn-sm" onClick={handleAddToInvoice}
                         disabled={!canConfirm}
                         title={isOverAllocated ? "Reduce weights — total exceeds bulk weight" : ""}>
@@ -544,5 +1183,6 @@ export default function BulkEntryPanel({
                 </div>
             </div>
         </div>
+        </>
     );
 }

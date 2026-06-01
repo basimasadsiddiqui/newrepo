@@ -10,7 +10,7 @@
 
 "use client";
 
-import { Pencil, Trash2, ImageIcon, LayoutList } from "lucide-react";
+import { Pencil, Trash2, ImageIcon, LayoutList, EyeOff, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { InvoiceItem, TransactionType } from "@/types";
 import { formatCurrency, formatWeight } from "@/lib/utils";
@@ -36,9 +36,11 @@ interface ItemGridProps {
     onDeleteItem: (index: number) => void;
     onImageUpload: (index: number) => void;
     onCategorize?: (index: number) => void;
+    isBulkMode?: boolean;
 }
 
-const STORAGE_KEY = "invoice_grid_visible_columns_v2";
+const STORAGE_KEY      = "invoice_grid_visible_columns_v2";
+const BULK_STORAGE_KEY = "invoice_grid_visible_columns_bulk_v1";
 
 const ALL_COLUMNS: ColumnDef[] = [
     { key: "sno",         label: "S#",          alwaysOn: true, group: "Identity" },
@@ -66,7 +68,7 @@ const ALL_COLUMNS: ColumnDef[] = [
     { key: "actions",     label: "Actions",     alwaysOn: true, group: "System" },
 ];
 
-function defaultVisibility(transactionType: TransactionType): Record<string, boolean> {
+function defaultVisibility(transactionType: TransactionType, isBulkMode = false): Record<string, boolean> {
     const isPurchase = transactionType === "PURCHASE";
     return {
         sno: true,
@@ -81,16 +83,19 @@ function defaultVisibility(transactionType: TransactionType): Record<string, boo
         stoneWt: true,
         beadsWt: true,
         diamondWt: true,
-        goldAmt: true,
-        stoneAmt: true,
-        beadsAmt: true,
-        diamondAmt: true,
-        polishAmt: !isPurchase,
-        labourAmt: true,
-        total: true,
+        // Bulk mode: amounts hidden by default
+        goldAmt:   !isBulkMode,
+        stoneAmt:  !isBulkMode,
+        beadsAmt:  !isBulkMode,
+        diamondAmt: !isBulkMode,
+        polishAmt: !isBulkMode && !isPurchase,
+        labourAmt: !isBulkMode,
+        total:     !isBulkMode,
         actions: true,
     };
 }
+
+const AMOUNT_KEYS = ["goldAmt", "stoneAmt", "beadsAmt", "diamondAmt", "polishAmt", "labourAmt", "total"];
 
 export default function ItemGrid({
     transactionType = "SALE",
@@ -100,13 +105,15 @@ export default function ItemGrid({
     onDeleteItem,
     onImageUpload,
     onCategorize,
+    isBulkMode = false,
 }: ItemGridProps) {
-    const [visible, setVisible] = useState<Record<string, boolean>>(() => defaultVisibility(transactionType));
+    const storageKey = isBulkMode ? BULK_STORAGE_KEY : STORAGE_KEY;
+    const [visible, setVisible] = useState<Record<string, boolean>>(() => defaultVisibility(transactionType, isBulkMode));
 
     // Hydrate from localStorage once on mount
     useEffect(() => {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
+            const raw = localStorage.getItem(storageKey);
             if (raw) {
                 const parsed = JSON.parse(raw) as Record<string, boolean>;
                 setVisible((prev) => ({ ...prev, ...parsed }));
@@ -114,24 +121,33 @@ export default function ItemGrid({
         } catch {
             /* noop */
         }
-    }, []);
+    }, [storageKey]);
 
     // Persist on change
     useEffect(() => {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(visible));
+            localStorage.setItem(storageKey, JSON.stringify(visible));
         } catch {
             /* noop */
         }
-    }, [visible]);
+    }, [visible, storageKey]);
+
+    const amountsVisible = AMOUNT_KEYS.some(k => visible[k]);
+    const toggleAmounts = () => {
+        const next = !amountsVisible;
+        setVisible(prev => ({
+            ...prev,
+            ...Object.fromEntries(AMOUNT_KEYS.map(k => [k, next])),
+        }));
+    };
 
     const columns = useMemo(() => {
-        // For SALE mode, hide the Kaat/Pure rows from the menu (they apply only to PURCHASE)
-        if (transactionType === "SALE") {
-            return ALL_COLUMNS.filter((c) => c.key !== "kaatWt" && c.key !== "pureWt");
-        }
-        return ALL_COLUMNS;
-    }, [transactionType]);
+        let cols = ALL_COLUMNS;
+        if (transactionType === "SALE") cols = cols.filter(c => c.key !== "kaatWt" && c.key !== "pureWt");
+        // In bulk mode, total is not forced-on (amounts can be fully hidden)
+        if (isBulkMode) cols = cols.map(c => c.key === "total" ? { ...c, alwaysOn: false } : c);
+        return cols;
+    }, [transactionType, isBulkMode]);
 
     const show = (k: string) => !!visible[k];
     const colCount = columns.filter((c) => show(c.key)).length;
@@ -143,12 +159,31 @@ export default function ItemGrid({
         >
             <div className="card-header" style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h3>Item Details ({items.length} items)</h3>
-                <ColumnVisibilityMenu
-                    columns={columns}
-                    visible={visible}
-                    onChange={setVisible}
-                    onReset={() => setVisible(defaultVisibility(transactionType))}
-                />
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {isBulkMode && (
+                        <button
+                            onClick={toggleAmounts}
+                            title={amountsVisible ? "Hide amount columns" : "Show amount columns"}
+                            style={{
+                                display: "flex", alignItems: "center", gap: 5,
+                                padding: "4px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 600,
+                                border: `1px solid ${amountsVisible ? "var(--maroon)" : "var(--border)"}`,
+                                background: amountsVisible ? "rgba(92,10,10,0.07)" : "var(--cream-light)",
+                                color: amountsVisible ? "var(--maroon)" : "var(--text-muted)",
+                                cursor: "pointer",
+                            }}
+                        >
+                            {amountsVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                            {amountsVisible ? "Hide Amounts" : "Show Amounts"}
+                        </button>
+                    )}
+                    <ColumnVisibilityMenu
+                        columns={columns}
+                        visible={visible}
+                        onChange={setVisible}
+                        onReset={() => setVisible(defaultVisibility(transactionType, isBulkMode))}
+                    />
+                </div>
             </div>
             <div style={{ overflowX: "auto" }}>
                 <table className="data-grid">
@@ -160,7 +195,7 @@ export default function ItemGrid({
                             {show("description") && <th style={{ minWidth: "110px" }}>Description</th>}
                             {show("pieces") && <th style={{ minWidth: "32px", textAlign: "right" }}>Pcs</th>}
                             {show("carat") && <th style={{ minWidth: "32px", textAlign: "right" }}>Ct</th>}
-                            {show("goldWt") && <th style={{ minWidth: "68px", textAlign: "right" }}>Gold Wt</th>}
+                            {show("goldWt") && <th style={{ minWidth: "68px", textAlign: "right", background: "rgba(201,168,76,0.18)", color: "var(--gold-dark)" }}>Gold Wt</th>}
                             {show("kaatWt") && transactionType === "PURCHASE" && (
                                 <th style={{ minWidth: "68px", textAlign: "right", color: "var(--danger)" }}>Kaat Wt</th>
                             )}
@@ -275,7 +310,14 @@ export default function ItemGrid({
                                     )}
                                     {show("pieces") && <td className="num">{item.pieces}</td>}
                                     {show("carat") && <td className="num">{item.carat}</td>}
-                                    {show("goldWt") && <td className="num">{formatWeight(item.estimatedGoldWeight)}</td>}
+                                    {show("goldWt") && (
+                                        <td className="num" style={{ background: "rgba(201,168,76,0.10)", fontWeight: 700, color: "var(--gold-dark)" }}>
+                                            {formatWeight(item.estimatedGoldWeight)}
+                                            {item.isBulkPurchase && (
+                                                <span title="Weight locked — use Categorize to split" style={{ marginLeft: 4, fontSize: "0.55rem", color: "var(--gold-dark)", cursor: "help", opacity: 0.7 }}>🔒</span>
+                                            )}
+                                        </td>
+                                    )}
                                     {show("kaatWt") && transactionType === "PURCHASE" && (
                                         <td className="num" style={{ color: "var(--danger)", fontWeight: 600 }}>{formatWeight(item.kaatWeight || 0)}</td>
                                     )}
@@ -374,7 +416,7 @@ function TotalsRow({
                     TOTALS
                 </td>
             )}
-            {show("goldWt") && <td className="num">{formatWeight(totals.goldWeight)}</td>}
+            {show("goldWt") && <td className="num" style={{ background: "rgba(201,168,76,0.10)", fontWeight: 700, color: "var(--gold-dark)" }}>{formatWeight(totals.goldWeight)}</td>}
             {show("kaatWt") && transactionType === "PURCHASE" && <td className="num"></td>}
             {show("pureWt") && transactionType === "PURCHASE" && <td className="num"></td>}
             {show("stoneWt") && <td className="num">{formatWeight(totals.stoneWeight)}</td>}

@@ -22,7 +22,7 @@ import { type TransactionType } from "@/types";
 import { type LabourBasis, type KaatBasis, type PolishLabourBasis, calcPasaAdjustedWeight } from "@/lib/calculationEngine";
 
 const POLISH_BASIS_OPTIONS: PolishLabourBasis[] = ["Per Tola", "Pasa", "Ratti Cut"];
-const LABOUR_BASIS_OPTIONS: LabourBasis[] = ["Per Tola", "Per Gram", "Fixed"];
+const LABOUR_BASIS_OPTIONS: LabourBasis[] = ["Per Tola", "Per Gram", "Per Piece", "Lump Sum"];
 const KAAT_BASIS_OPTIONS: KaatBasis[] = ["Direct Weight", "Ratti Kaat"];
 
 interface JewelleryRulesPanelProps {

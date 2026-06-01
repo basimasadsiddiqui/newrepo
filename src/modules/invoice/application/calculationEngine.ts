@@ -34,7 +34,7 @@ export function rattiToKarat(ratti: number): number {
 }
 
 /** Supported basis types for Labour calculation */
-export type LabourBasis = "Per Tola" | "Per Gram" | "Fixed";
+export type LabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum" | "Fixed";
 
 /** Supported basis types for Kaat calculation */
 export type KaatBasis = "Ratti Kaat" | "Direct Weight";
@@ -110,10 +110,15 @@ export function calcPolishAmount(
 export function calcLabourAmount(
     basis: LabourBasis,
     adjustedGoldWeight: number,
-    rate: number
+    rate: number,
+    pieces?: number
 ): number {
-    if (basis === "Fixed") {
+    if (basis === "Fixed" || basis === "Lump Sum") {
         return new Decimal(rate).toDecimalPlaces(4).toNumber();
+    }
+
+    if (basis === "Per Piece") {
+        return new Decimal(rate).times(pieces ?? 1).toDecimalPlaces(4).toNumber();
     }
 
     if (basis === "Per Gram") {
@@ -121,6 +126,7 @@ export function calcLabourAmount(
         return result.toDecimalPlaces(4).toNumber();
     }
 
+    // Per Tola (default)
     const tolas = new Decimal(adjustedGoldWeight).div(GRAMS_PER_TOLA);
     const result = tolas.times(rate);
     return result.toDecimalPlaces(4).toNumber();
@@ -203,6 +209,7 @@ export function calculateLineItem(params: {
     polishBasis: PolishLabourBasis;
     labourRate: number;
     labourBasis: LabourBasis;
+    pieces?: number;
     kaatRate?: number;
     kaatBasis?: KaatBasis;
     stoneWeight: number;
@@ -263,7 +270,7 @@ export function calculateLineItem(params: {
         params.carat,
         goldAmount
     );
-    const labourAmount = calcLabourAmount(params.labourBasis, adjustedGoldWeight, params.labourRate);
+    const labourAmount = calcLabourAmount(params.labourBasis, adjustedGoldWeight, params.labourRate, params.pieces);
 
     const totalAmount = calcLineTotal(
         goldAmount,
