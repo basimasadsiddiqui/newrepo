@@ -31,7 +31,7 @@ export interface BulkRow {
     isBulkPurchase?: boolean;
 }
 
-type LocalKaatBasis = KaatBasis | "Purity" | "None";
+type LocalKaatBasis = "Ratti Kaat" | "Purity" | "None";
 type StoneRateBasis = "Per Carat" | "Per Gram" | "Per Piece" | "Lumpsum";
 type LocalLabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum";
 
@@ -152,24 +152,22 @@ export default function BulkEntryPanel({
     // Ratti   = user enters ratti count:           weight × (96−ratti)/96
     const kaatPureWeight = useMemo(() => {
         if (quickWeight <= 0) return null;
+        // Ratti: Weight × (96 − ratti) / 96
         if (localKaatBasis === "Ratti Kaat" && localKaatRate > 0)
             return Math.round(quickWeight * (96 - localKaatRate) / 96 * 1000) / 1000;
-        if (localKaatBasis === "Direct Weight" && quickCarat > 0)  // Carat-Based deduction
-            return Math.round(quickWeight * (quickCarat / 24) * 1000) / 1000;
-        if (localKaatBasis === "Purity" && localKaatRate > 0)      // Purity %: Weight × (Purity/100), e.g. 200×88%=176
+        // Purity: Weight × (Purity% / 100), e.g. 200 × 88% = 176
+        if (localKaatBasis === "Purity" && localKaatRate > 0)
             return Math.round(quickWeight * (localKaatRate / 100) * 1000) / 1000;
-        // "None" → null (no deduction, Pasa)
+        // Pasa (None): no deduction
         return null;
-    }, [quickWeight, localKaatBasis, localKaatRate, quickCarat]);
+    }, [quickWeight, localKaatBasis, localKaatRate]);
 
     const kaatDeduction = kaatPureWeight !== null ? quickWeight - kaatPureWeight : 0;
 
     // ── Map local kaat basis to engine KaatBasis ──
     // Pasa and Purity both resolve via carat purity — engine handles with undefined kaatBasis
     const effectiveKaatBasis: KaatBasis | undefined =
-        localKaatBasis === "Ratti Kaat" ? "Ratti Kaat" :
-        localKaatBasis === "Direct Weight" ? "Direct Weight" :
-        undefined; // "None" and "Purity" both pass through as undefined (engine skips kaat)
+        localKaatBasis === "Ratti Kaat" ? "Ratti Kaat" : undefined;
 
     // ── Quick mode calcs ──
     const quickCalc = useMemo(() => {
@@ -724,33 +722,27 @@ export default function BulkEntryPanel({
                                 <select className="form-select" style={{ fontSize: "0.8rem" }}
                                     value={localKaatBasis}
                                     onChange={e => setLocalKaatBasis(e.target.value as LocalKaatBasis)}>
-                                    <option value="None">Pasa (No Kaat)</option>
-                                    <option value="Ratti Kaat">Ratti Kaat</option>
-                                    <option value="Direct Weight">Carat-Based</option>
+                                    <option value="Ratti Kaat">Ratti</option>
+                                    <option value="None">Pasa</option>
                                     <option value="Purity">Purity</option>
                                 </select>
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label" style={{ fontSize: "0.78rem" }}>
-                                    {localKaatBasis === "Ratti Kaat" ? "Ratti Count"
-                                    : localKaatBasis === "Purity" ? "Purity %  (e.g. 88 → 200×0.88=176)"
-                                    : localKaatBasis === "Direct Weight" ? "— (auto from Carat)"
-                                    : "— (Pasa, no deduction)"}
+                                    {localKaatBasis === "Ratti Kaat"
+                                        ? "Ratti  —  Wt × (96 − ratti) / 96"
+                                        : localKaatBasis === "Purity"
+                                        ? "Purity %  —  Wt × (% / 100)"
+                                        : "Pasa  —  No Cutting"}
                                 </label>
-                                <input className="form-input" type="number" min={0}
-                                    step={0.1}
+                                <input className="form-input" type="number" min={0} step={0.1}
                                     max={localKaatBasis === "Purity" ? 100 : undefined}
                                     value={localKaatRate || ""}
                                     onChange={e => setLocalKaatRate(Number(e.target.value))}
                                     onFocus={sel}
-                                    placeholder={
-                                        localKaatBasis === "Direct Weight" ? "—"
-                                        : localKaatBasis === "Purity" ? "e.g. 88"
-                                        : localKaatBasis === "None" ? "—"
-                                        : "0"
-                                    }
-                                    disabled={localKaatBasis === "Direct Weight" || localKaatBasis === "None"}
-                                    style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem", opacity: (localKaatBasis === "Direct Weight" || localKaatBasis === "None") ? 0.4 : 1 }}
+                                    placeholder={localKaatBasis === "None" ? "—" : localKaatBasis === "Purity" ? "e.g. 88" : "e.g. 4"}
+                                    disabled={localKaatBasis === "None"}
+                                    style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem", opacity: localKaatBasis === "None" ? 0.4 : 1 }}
                                 />
                             </div>
                         </div>
@@ -758,7 +750,7 @@ export default function BulkEntryPanel({
                             <div style={{ marginTop: 7, display: "flex", alignItems: "center", gap: 8, fontSize: "0.78rem" }}>
                                 <span style={{ color: "var(--text-muted)" }}>{quickWeight.toFixed(3)} g</span>
                                 <span style={{ color: "var(--text-muted)" }}>−</span>
-                                <span style={{ color: "var(--danger)", fontWeight: 600 }}>{(quickWeight - kaatPureWeight).toFixed(3)} g {localKaatBasis === "Direct Weight" ? "pasa" : localKaatBasis === "Purity" ? "deducted" : "kaat"}</span>
+                                <span style={{ color: "var(--danger)", fontWeight: 600 }}>{(quickWeight - kaatPureWeight).toFixed(3)} g {localKaatBasis === "Purity" ? "deducted" : "kaat"}</span>
                                 <span style={{ color: "var(--text-muted)" }}>=</span>
                                 <span style={{ color: "var(--success)", fontWeight: 800, fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>{kaatPureWeight.toFixed(3)} g pure</span>
                                 {localKaatBasis === "Ratti Kaat" && localKaatRate > 0 && (
@@ -891,7 +883,7 @@ export default function BulkEntryPanel({
                                     <>
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "0.78rem" }}>
                                             <span style={{ color: "var(--danger)" }}>
-                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : localKaatBasis === "Direct Weight" ? `Carat-Based (${((quickCarat / 24) * 100).toFixed(1)}%)` : `Purity ${localKaatRate}%`})
+                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : `Purity ${localKaatRate}%`})
                                             </span>
                                             <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
                                                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--danger)", fontWeight: 600 }}>
