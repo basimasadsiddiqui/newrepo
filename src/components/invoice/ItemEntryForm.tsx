@@ -99,6 +99,7 @@ export default function ItemEntryForm({
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [hasGemstone, setHasGemstone] = useState(false);
     const [hasBeads, setHasBeads] = useState(false);
+    const [gRatti, setGRatti] = useState<number>(0);
     const itemImageInputRef = useRef<HTMLInputElement>(null);
 
     const customCategoryName = formData.categoryId.startsWith("__new__:")
@@ -116,11 +117,6 @@ export default function ItemEntryForm({
     const hasDiamondCategory = categories.some(c => c.name.toLowerCase().includes("diamond"));
     const shortcuts = getShortcuts(categories, formData.categoryId, customCategoryName);
     const listId = "item-desc-list";
-
-    // Guarantee calculator values
-    const purity = formData.carat / 24;
-    const pureGold = formData.estimatedGoldWeight * purity;
-    const alloyWt = formData.estimatedGoldWeight - pureGold;
 
     // Stone amount preview: if rate > 0, compute from rate×weight; else manual amount
     const effectiveStoneAmt = formData.stoneRate > 0 && formData.stoneWeight > 0
@@ -308,60 +304,18 @@ export default function ItemEntryForm({
                     </div>
                 </div>
 
-                {/* ── Supplier's Guarantee (PURCHASE only) — full-width dedicated row ── */}
+                {/* ── Guaranteed Ratti Kaat (PURCHASE only) — same as Bulk invoice ── */}
                 {transactionType === "PURCHASE" && (
-                    <div style={{
-                        marginBottom: 6,
-                        padding: "8px 10px",
-                        background: "var(--cream)",
-                        border: "1px solid var(--gold-light)",
-                        borderRadius: 8,
-                    }}>
-                        <div style={{
-                            fontSize: "0.65rem", fontWeight: 700, color: "var(--gold-dark)",
-                            textTransform: "uppercase", letterSpacing: "0.08em",
-                            borderLeft: "3px solid var(--gold)", paddingLeft: 6, marginBottom: 7,
-                        }}>
-                            Supplier&apos;s Guarantee — Purity Claim
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label" style={{ fontSize: "0.75rem" }}>Purity (0 – 1)</label>
-                                <input className="form-input" type="number"
-                                    min={0} max={1} step={0.001}
-                                    value={purity.toFixed(3)}
-                                    onChange={e => {
-                                        const p = Math.min(1, Math.max(0, Number(e.target.value)));
-                                        onFormChange("carat", Number((p * 24).toFixed(3)));
-                                    }}
-                                    disabled={isDiamondCategory}
-                                    style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9rem", ...(isDiamondCategory ? { opacity: 0.5 } : {}) }}
-                                />
-                                <div style={{ fontSize: "0.65rem", color: "var(--gold-dark)", marginTop: 2, fontWeight: 600 }}>
-                                    = {formData.carat}K &nbsp;|&nbsp; {(purity * 100).toFixed(2)}%
-                                </div>
-                            </div>
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label" style={{ fontSize: "0.75rem", color: "var(--success)" }}>Pure Gold (g)</label>
-                                <input className="form-input" readOnly
-                                    value={pureGold.toFixed(3)}
-                                    style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", background: "var(--success-bg)", color: "var(--success)" }}
-                                />
-                                <div style={{ fontSize: "0.65rem", color: "var(--success)", marginTop: 2 }}>
-                                    {formData.estimatedGoldWeight > 0 ? `${formData.estimatedGoldWeight.toFixed(3)} × ${purity.toFixed(3)}` : "enter weight above"}
-                                </div>
-                            </div>
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label" style={{ fontSize: "0.75rem" }}>Alloy (g)</label>
-                                <input className="form-input" readOnly
-                                    value={alloyWt.toFixed(3)}
-                                    style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9rem", background: "var(--cream-dark)", color: "var(--text-secondary)" }}
-                                />
-                                <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: 2 }}>
-                                    {formData.estimatedGoldWeight > 0 ? `${formData.estimatedGoldWeight.toFixed(3)} − ${pureGold.toFixed(3)}` : "weight − pure"}
-                                </div>
-                            </div>
-                        </div>
+                    <div className="form-group" style={{ marginBottom: 6 }}>
+                        <label className="form-label" style={{ fontSize: "0.8rem" }}>
+                            Guaranteed Ratti Kaat (Supplier&apos;s Claim)
+                        </label>
+                        <input className="form-input" type="number" min={0} step={0.5}
+                            value={gRatti || ""}
+                            onChange={e => setGRatti(Number(e.target.value))}
+                            placeholder="e.g. 12"
+                            style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                        />
                     </div>
                 )}
 
@@ -444,12 +398,12 @@ export default function ItemEntryForm({
                 <div style={{
                     display: "grid",
                     gridTemplateColumns: transactionType === "PURCHASE"
-                        ? "1fr 1fr 1fr 1fr 1fr 1fr 1fr 1.5fr"
+                        ? "1fr 1fr 1fr 1fr 1fr 1fr 1.5fr"
                         : "1.4fr 1fr 1fr 1fr 1fr 1fr 1.5fr",
                     gap: "6px",
                     alignItems: "end",
                 }}>
-                    {/* Sale-only Guarantee (stays in row 2 for sale) */}
+                    {/* Sale-only Guarantee */}
                     {transactionType !== "PURCHASE" && (
                         <div className="form-group">
                             <label className="form-label" style={{
@@ -466,19 +420,21 @@ export default function ItemEntryForm({
                                 <div>
                                     <div style={{ fontSize: "0.55rem", color: "var(--text-muted)", marginBottom: 2, paddingLeft: 2 }}>Purity</div>
                                     <input className="form-input" type="number" min={0} max={1} step={0.001}
-                                        value={purity.toFixed(3)}
+                                        value={(formData.carat / 24).toFixed(3)}
                                         onChange={e => { const p = Math.min(1, Math.max(0, Number(e.target.value))); onFormChange("carat", Number((p * 24).toFixed(3))); }}
                                         disabled={isDiamondCategory}
                                         style={{ height: 28, fontSize: "0.7rem", ...(isDiamondCategory ? { opacity: 0.5 } : {}) }} />
                                 </div>
                                 <div>
                                     <div style={{ fontSize: "0.55rem", color: "var(--success)", marginBottom: 2, paddingLeft: 2 }}>Pure (g)</div>
-                                    <input className="form-input" readOnly value={pureGold.toFixed(3)}
+                                    <input className="form-input" readOnly
+                                        value={(formData.estimatedGoldWeight * (formData.carat / 24)).toFixed(3)}
                                         style={{ height: 28, fontSize: "0.7rem", background: "var(--success-bg)", color: "var(--success)", fontWeight: 700, fontFamily: "var(--font-mono)" }} />
                                 </div>
                                 <div>
                                     <div style={{ fontSize: "0.55rem", color: "var(--text-muted)", marginBottom: 2, paddingLeft: 2 }}>Alloy (g)</div>
-                                    <input className="form-input" readOnly value={alloyWt.toFixed(3)}
+                                    <input className="form-input" readOnly
+                                        value={(formData.estimatedGoldWeight - formData.estimatedGoldWeight * (formData.carat / 24)).toFixed(3)}
                                         style={{ height: 28, fontSize: "0.7rem", background: "var(--cream)", fontFamily: "var(--font-mono)" }} />
                                 </div>
                             </div>
