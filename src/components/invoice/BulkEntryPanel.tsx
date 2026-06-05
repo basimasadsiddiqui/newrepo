@@ -7,7 +7,7 @@ import {
     Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
-import { calculateLineItem, goldRateToPerGram } from "@/lib/calculationEngine";
+import { calculateLineItem, goldRateToPerGram, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
 
 export interface BulkRow {
@@ -878,6 +878,17 @@ export default function BulkEntryPanel({
                                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontWeight: 600 }}>
                                         {quickWeight.toFixed(3)} g
                                     </span>
+                                </div>
+                                {/* Tola conversions */}
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, margin: "2px 0" }}>
+                                    <div>
+                                        <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola (÷12.150)</div>
+                                        <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>{gramsToPakkaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola (÷11.664)</div>
+                                        <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>{gramsToKachaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
+                                    </div>
                                 </div>
                                 {kaatDeduction > 0 && (
                                     <>

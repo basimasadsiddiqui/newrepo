@@ -18,8 +18,21 @@ import Decimal from "decimal.js";
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 
-/** 1 Tola = 11.664 grams (Pakistani standard) */
+/** 1 Kacha Tola = 11.664 grams — used for gold rate calculations */
 const GRAMS_PER_TOLA = new Decimal("11.664");
+
+/** Pakka Tola = 12.150 grams (Pakistani market standard) */
+export const PAKKA_TOLA_GRAMS = 12.150;
+/** Kacha Tola = 11.664 grams */
+export const KACHA_TOLA_GRAMS = 11.664;
+
+export function gramsToPakkaTola(grams: number): number {
+    return new Decimal(grams).div(PAKKA_TOLA_GRAMS).toDecimalPlaces(4).toNumber();
+}
+
+export function gramsToKachaTola(grams: number): number {
+    return new Decimal(grams).div(KACHA_TOLA_GRAMS).toDecimalPlaces(4).toNumber();
+}
 
 // ─── Karat ↔ Ratti Conversion ──────────────────────────────────
 

@@ -300,16 +300,23 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
 
     // ── SUMMARY + SIGNATURE ROW ────────────────────────────────────────────────
     // Purchase: weight-first summary (no balance). Sale: amount-first summary.
+    const pakkaTola = (data.totalGoldWeight / 12.150).toFixed(4);
+    const kachaTola = (data.totalGoldWeight / 11.664).toFixed(4);
+
     const summaryLines: [string, string][] = isPurchase
         ? [
-            ["Total Gold Weight :",   `${data.totalGoldWeight.toFixed(3)} g`],
-            ["Total Kaat Weight :",   `${data.items.reduce((s, i) => s + (i.kaatWeight ?? 0), 0).toFixed(3)} g`],
-            ["Net Pure Weight :",     `${data.items.reduce((s, i) => s + i.adjustedGoldWeight, 0).toFixed(3)} g`],
-            ["Total Stone Weight :",  `${data.items.reduce((s, i) => s + i.stoneWeight, 0).toFixed(3)} g`],
+            ["Total Gold Weight :",      `${data.totalGoldWeight.toFixed(3)} g`],
+            ["  Pakka Tola (÷12.150) :", `${pakkaTola} Tola`],
+            ["  Kacha Tola (÷11.664) :", `${kachaTola} Tola`],
+            ["Total Kaat Weight :",      `${data.items.reduce((s, i) => s + (i.kaatWeight ?? 0), 0).toFixed(3)} g`],
+            ["Net Pure Weight :",        `${data.items.reduce((s, i) => s + i.adjustedGoldWeight, 0).toFixed(3)} g`],
+            ["Total Stone Weight :",     `${data.items.reduce((s, i) => s + i.stoneWeight, 0).toFixed(3)} g`],
           ]
         : [
-            ["Total Gold Wt :",   `${data.totalGoldWeight.toFixed(3)} g`],
-            ["Items Total :",     `Rs.${fmtNum(data.totalAmount)}`],
+            ["Total Gold Wt :",          `${data.totalGoldWeight.toFixed(3)} g`],
+            ["  Pakka Tola (÷12.150) :", `${pakkaTola} Tola`],
+            ["  Kacha Tola (÷11.664) :", `${kachaTola} Tola`],
+            ["Items Total :",            `Rs.${fmtNum(data.totalAmount)}`],
           ];
 
     if (!isPurchase) {
@@ -344,14 +351,15 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
 
     let sy = y + 12;
     for (const [lbl, val] of summaryLines) {
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...C.textMid);
+        const isTolaLine = lbl.startsWith("  ");
+        doc.setFontSize(isTolaLine ? 7 : 8);
+        doc.setFont("helvetica", isTolaLine ? "italic" : "normal");
+        doc.setTextColor(...(isTolaLine ? C.textLight : C.textMid));
         doc.text(lbl, sumX + 3, sy);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...C.text);
+        doc.setFont("helvetica", isTolaLine ? "italic" : "bold");
+        doc.setTextColor(...(isTolaLine ? C.textLight : C.text));
         doc.text(val, sumX + sumW - 3, sy, { align: "right" });
-        sy += SUM_LH;
+        sy += isTolaLine ? 4.5 : SUM_LH;
     }
 
     sy += 2;

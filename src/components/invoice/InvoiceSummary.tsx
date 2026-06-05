@@ -28,6 +28,7 @@ import {
     Calculator,
 } from "lucide-react";
 import { formatCurrency, formatWeight } from "@/lib/utils";
+import { gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
 
 interface InvoiceSummaryProps {
     transactionType?: "SALE" | "PURCHASE";
@@ -167,6 +168,33 @@ export default function InvoiceSummary({
                         <span className="label">Total Gold Weight</span>
                         <span className="value">{formatWeight(totalGoldWeight)} g</span>
                     </div>
+
+                    {/* Tola conversions */}
+                    {totalGoldWeight > 0 && (
+                        <div style={{
+                            display: "grid", gridTemplateColumns: "1fr 1fr",
+                            gap: "6px", margin: "2px 0 6px",
+                            padding: "6px 8px",
+                            background: "rgba(201,168,76,0.08)",
+                            border: "1px solid var(--gold-light)",
+                            borderRadius: "6px",
+                        }}>
+                            <div>
+                                <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola</div>
+                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 1 }}>÷ 12.150 g</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--maroon)" }}>
+                                    {gramsToPakkaTola(totalGoldWeight).toFixed(4)} <span style={{ fontSize: "0.65rem", fontWeight: 500 }}>tola</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola</div>
+                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 1 }}>÷ 11.664 g</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--text-secondary)" }}>
+                                    {gramsToKachaTola(totalGoldWeight).toFixed(4)} <span style={{ fontSize: "0.65rem", fontWeight: 500 }}>tola</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Total Amount */}
                     <div className="summary-row">
