@@ -1444,15 +1444,34 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             />
           </div>
         </div>
+      ) : transactionType === "PURCHASE" ? (
+        /* ── PURCHASE: full width, no sidebar — rules are inline in form ── */
+        <ItemEntryForm
+          categories={categories}
+          metalTypes={metalTypes}
+          goldRate={goldRate}
+          formData={itemForm}
+          isEditing={editingItemIndex !== null}
+          transactionType={transactionType}
+          kaatWeightPreview={currentItemCalc?.kaatWeight || 0}
+          pureWeightPreview={currentItemCalc?.adjustedGoldWeight || 0}
+          onFormChange={handleItemFormChange}
+          onAddItem={handleAddItem}
+          onReset={handleResetItemForm}
+          onBulkPurchase={() => setIsBulkModalOpen(true)}
+          onGoldRateChange={setGoldRate}
+          kaatBasis={kaatBasis}
+          kaatRate={kaatRate}
+          labourBasis={labourBasis}
+          labourRate={labourRate}
+          onKaatBasisChange={setKaatBasis}
+          onKaatRateChange={setKaatRate}
+          onLabourBasisChange={setLabourBasis}
+          onLabourRateChange={setLabourRate}
+        />
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 300px",
-            gap: "10px",
-            alignItems: "start",
-          }}
-        >
+        /* ── SALE: side-by-side with rules panel ── */
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "10px", alignItems: "start" }}>
           <ItemEntryForm
             categories={categories}
             metalTypes={metalTypes}
@@ -1466,7 +1485,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             onAddItem={handleAddItem}
             onReset={handleResetItemForm}
             onBulkPurchase={() => setIsBulkModalOpen(true)}
-            onGoldRateChange={transactionType === "PURCHASE" ? setGoldRate : undefined}
+            onGoldRateChange={undefined}
           />
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             <JewelleryRulesPanel

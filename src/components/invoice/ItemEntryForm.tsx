@@ -2,6 +2,7 @@
 
 import { Plus, RotateCcw, Package, X, Gem } from "lucide-react";
 import type { Category, ItemEntryFormData, MetalTypeOption } from "@/types";
+import type { KaatBasis, LabourBasis } from "@/lib/calculationEngine";
 import { useRef, useState, type ChangeEvent } from "react";
 import StockSelectionModal from "./StockSelectionModal";
 import GemstoneModal from "./GemstoneModal";
@@ -45,6 +46,15 @@ interface ItemEntryFormProps {
     onReset: () => void;
     onBulkPurchase?: () => void;
     onGoldRateChange?: (rate: number) => void;
+    // Purchase inline jewellery rules
+    kaatBasis?: KaatBasis;
+    kaatRate?: number;
+    labourBasis?: LabourBasis;
+    labourRate?: number;
+    onKaatBasisChange?: (v: KaatBasis) => void;
+    onKaatRateChange?: (v: number) => void;
+    onLabourBasisChange?: (v: LabourBasis) => void;
+    onLabourRateChange?: (v: number) => void;
 }
 
 interface StockSelectionItem {
@@ -74,6 +84,14 @@ export default function ItemEntryForm({
     onReset,
     onBulkPurchase,
     onGoldRateChange,
+    kaatBasis,
+    kaatRate,
+    labourBasis,
+    labourRate,
+    onKaatBasisChange,
+    onKaatRateChange,
+    onLabourBasisChange,
+    onLabourRateChange,
 }: ItemEntryFormProps) {
     const [isStockModalOpen, setIsStockModalOpen] = useState(false);
     const [isGemstoneModalOpen, setIsGemstoneModalOpen] = useState(false);
@@ -347,6 +365,81 @@ export default function ItemEntryForm({
                     </div>
                 )}
 
+                {/* ── Jewellery Rules (PURCHASE only — inline, matches old software) ── */}
+                {transactionType === "PURCHASE" && onKaatBasisChange && (
+                    <div style={{
+                        marginBottom: 6,
+                        padding: "8px 10px",
+                        background: "linear-gradient(135deg, rgba(92,10,10,0.03), rgba(201,168,76,0.05))",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                    }}>
+                        <div style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>
+                            Jewellery Rules
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "60px 1.2fr 1fr 90px  60px 1.2fr 1fr 90px", gap: 6, alignItems: "end" }}>
+                            {/* Kaat */}
+                            <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--danger)", paddingBottom: 6 }}>Kaat On</div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.68rem" }}>Basis</label>
+                                <select className="form-select" style={{ height: 30, fontSize: "0.72rem" }}
+                                    value={kaatBasis ?? "Ratti Kaat"}
+                                    onChange={e => onKaatBasisChange(e.target.value as KaatBasis)}>
+                                    <option value="Ratti Kaat">Ratti</option>
+                                    <option value="Pasa">Pasa</option>
+                                    <option value="Purity %">Purity %</option>
+                                </select>
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.68rem" }}>
+                                    @ {kaatBasis === "Ratti Kaat" ? "Ratti" : kaatBasis === "Purity %" ? "Purity %" : "—"}
+                                </label>
+                                <input className="form-input" type="number" min={0} step={0.1}
+                                    style={{ height: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.85rem", opacity: kaatBasis === "Pasa" ? 0.4 : 1 }}
+                                    disabled={kaatBasis === "Pasa"}
+                                    value={kaatRate ?? ""}
+                                    onChange={e => onKaatRateChange?.(Number(e.target.value))}
+                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "87.5" : "e.g. 2"} />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.68rem", color: "var(--danger)" }}>Kaat Wt</label>
+                                <input className="form-input" readOnly
+                                    value={kaatWeightPreview > 0 ? kaatWeightPreview.toFixed(3) : "—"}
+                                    style={{ height: 30, background: "var(--cream)", color: "var(--danger)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: "0.85rem" }} />
+                            </div>
+                            {/* Labour */}
+                            <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--text-secondary)", paddingBottom: 6 }}>Labour</div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.68rem" }}>Basis</label>
+                                <select className="form-select" style={{ height: 30, fontSize: "0.72rem" }}
+                                    value={labourBasis ?? "Per Tola"}
+                                    onChange={e => onLabourBasisChange?.(e.target.value as LabourBasis)}>
+                                    <option value="Per Tola">Per Tola</option>
+                                    <option value="Per Gram">Per Gram</option>
+                                    <option value="Per Piece">Per Piece</option>
+                                    <option value="Lump Sum">Lump Sum</option>
+                                </select>
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.68rem" }}>
+                                    @ {labourBasis === "Per Tola" ? "Rs/Tola" : labourBasis === "Per Gram" ? "Rs/g" : labourBasis === "Per Piece" ? "Rs/Pc" : "Rs flat"}
+                                </label>
+                                <input className="form-input" type="number" min={0} step={1}
+                                    style={{ height: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.85rem" }}
+                                    value={labourRate ?? ""}
+                                    onChange={e => onLabourRateChange?.(Number(e.target.value))}
+                                    placeholder="e.g. 1000" />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="form-label" style={{ fontSize: "0.68rem", color: "var(--success)" }}>Pure Wt</label>
+                                <input className="form-input" readOnly
+                                    value={pureWeightPreview > 0 ? pureWeightPreview.toFixed(3) : "—"}
+                                    style={{ height: 30, background: "var(--success-bg)", color: "var(--success)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: "0.85rem" }} />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* ── Row 2: Weights, Stone Rate/Amt, Actions ── */}
                 <div style={{
                     display: "grid",
@@ -401,24 +494,6 @@ export default function ItemEntryForm({
                             disabled={isDiamondCategory}
                             style={isDiamondCategory ? { opacity: 0.5 } : {}} />
                     </div>
-
-                    {/* PURCHASE only: Kaat + Pure preview */}
-                    {transactionType === "PURCHASE" && (
-                        <div style={{ display: "flex", gap: 4 }}>
-                            <div className="form-group" style={{ flex: 1 }}>
-                                <label className="form-label" style={{ color: "var(--danger)" }}>Kaat Wt</label>
-                                <input className="form-input" readOnly
-                                    value={kaatWeightPreview > 0 ? kaatWeightPreview.toFixed(3) : "—"}
-                                    style={{ background: "var(--cream)", color: "var(--danger)", fontWeight: 600 }} />
-                            </div>
-                            <div className="form-group" style={{ flex: 1 }}>
-                                <label className="form-label" style={{ color: "var(--success)" }}>Pure Wt</label>
-                                <input className="form-input" readOnly
-                                    value={pureWeightPreview > 0 ? pureWeightPreview.toFixed(3) : "—"}
-                                    style={{ background: "var(--cream)", color: "var(--success)", fontWeight: 700 }} />
-                            </div>
-                        </div>
-                    )}
 
                     {/* Stone Weight + Rate */}
                     <div className="form-group">
