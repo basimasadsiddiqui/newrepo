@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { X, Plus, Trash2, Gem } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Plus, Trash2, Gem, Settings } from "lucide-react";
+import { loadGemstonePresets, type GemstonePreset } from "@/lib/gemstoneRates";
 
 type RateBasis = "Per Gram" | "Per Carat" | "Per Piece" | "Lumpsum";
 
@@ -42,11 +43,32 @@ function calcAmount(r: StoneRow): number {
 }
 
 export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneModalProps) {
-    const [rows, setRows] = useState<StoneRow[]>([mkRow()]);
+    const [rows, setRows] = useState<StoneRow[]>([]);
     const [draft, setDraft] = useState<StoneRow>(() => mkRow());
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [presets, setPresets] = useState<GemstonePreset[]>([]);
+
+    useEffect(() => {
+        if (isOpen) setPresets(loadGemstonePresets());
+    }, [isOpen]);
 
     if (!isOpen) return null;
+
+    // Click a preset tile → instantly add a row pre-filled with its rate (weight = 0, user fills it)
+    const addPreset = (p: GemstonePreset) => {
+        const isPerCarat = p.defaultUnit === "carats";
+        const newRow: StoneRow = {
+            id: `stone-${Date.now()}-${++counter}`,
+            type: p.name,
+            pieces: 1,
+            value: 0,
+            unit: isPerCarat ? "ct" : "g",
+            rateBasis: isPerCarat ? "Per Carat" : "Per Gram",
+            rate: isPerCarat ? p.pricePerCarat : p.pricePerGram,
+        };
+        setRows(prev => [...prev, newRow]);
+        setEditingId(newRow.id); // open it for weight entry immediately
+    };
 
     const totalWeightG  = rows.reduce((s, r) => s + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
     const totalWeightCt = rows.reduce((s, r) => s + (r.unit === "g"  ? r.value / 0.2 : r.value), 0);
@@ -112,6 +134,48 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                         fontSize: "1rem", fontWeight: 700,
                     }}>×</button>
                 </div>
+
+                {/* ── Preset tiles from Settings ── */}
+                {presets.length > 0 && (
+                    <div style={{ padding: "10px 14px", background: "var(--cream)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+                            <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                                Quick Add from Settings
+                            </div>
+                            <a href="/settings/rates" target="_blank" rel="noopener noreferrer"
+                                style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.65rem", color: "var(--text-muted)", textDecoration: "none" }}>
+                                <Settings size={10} /> Manage rates
+                            </a>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {presets.map(p => (
+                                <button key={p.id} onClick={() => addPreset(p)} style={{
+                                    display: "flex", alignItems: "center", gap: 6,
+                                    padding: "5px 12px",
+                                    borderRadius: "var(--radius-full)",
+                                    border: `1.5px solid ${p.color}60`,
+                                    background: `${p.color}12`,
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                    fontSize: "0.78rem",
+                                    color: p.color,
+                                    transition: "all var(--t-fast)",
+                                }}>
+                                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: p.color, flexShrink: 0 }} />
+                                    {p.name}
+                                    <span style={{ fontSize: "0.62rem", color: "var(--text-muted)", fontWeight: 400 }}>
+                                        {p.defaultUnit === "carats"
+                                            ? `Rs.${p.pricePerCarat.toLocaleString("en-PK")}/ct`
+                                            : `Rs.${p.pricePerGram.toLocaleString("en-PK")}/g`}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginTop: 5 }}>
+                            Click any gemstone to add it to the table below — then enter the weight
+                        </div>
+                    </div>
+                )}
 
                 {/* Add-row form */}
                 <div style={{ padding: "10px 14px", background: "var(--cream-light)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -215,7 +279,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                 <div style={{ overflowY: "auto", flex: 1 }}>
                     {rows.length === 0 ? (
                         <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "28px 0", fontSize: "0.82rem" }}>
-                            No stones added — fill the form above and click Add
+                            Click a gemstone above or fill the form and click Add
                         </div>
                     ) : (
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
