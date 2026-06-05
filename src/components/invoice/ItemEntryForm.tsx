@@ -299,13 +299,13 @@ export default function ItemEntryForm({
                     gap: "6px",
                     alignItems: "end",
                 }}>
-                    {/* Guarantee calculator */}
+                    {/* Guarantee / Supplier's Purity Claim */}
                     <div className="form-group">
                         <label className="form-label" style={{
                             color: "var(--gold-dark)", fontWeight: 700,
                             borderLeft: "2px solid var(--gold)", paddingLeft: 5,
                         }}>
-                            Guarantee
+                            {transactionType === "PURCHASE" ? "Supplier's Purity Claim" : "Guarantee"}
                         </label>
                         <div style={{
                             display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4,
@@ -315,17 +315,33 @@ export default function ItemEntryForm({
                             padding: "5px",
                         }}>
                             <div>
-                                <div style={{ fontSize: "0.55rem", color: "var(--text-muted)", marginBottom: 2, paddingLeft: 2 }}>Purity</div>
-                                <input className="form-input" type="number"
-                                    min={0} max={1} step={0.001}
-                                    value={purity.toFixed(3)}
-                                    onChange={e => {
-                                        const p = Math.min(1, Math.max(0, Number(e.target.value)));
-                                        onFormChange("carat", Number((p * 24).toFixed(3)));
-                                    }}
-                                    disabled={isDiamondCategory}
-                                    style={{ height: 28, fontSize: "0.7rem", ...(isDiamondCategory ? { opacity: 0.5 } : {}) }}
-                                />
+                                <div style={{ fontSize: "0.55rem", color: "var(--text-muted)", marginBottom: 2, paddingLeft: 2 }}>
+                                    {transactionType === "PURCHASE" ? `Purity %  (${formData.carat}K)` : "Purity"}
+                                </div>
+                                {transactionType === "PURCHASE" ? (
+                                    <input className="form-input" type="number"
+                                        min={0} max={100} step={0.01}
+                                        value={(purity * 100).toFixed(2)}
+                                        onChange={e => {
+                                            const p = Math.min(100, Math.max(0, Number(e.target.value)));
+                                            onFormChange("carat", Number(((p / 100) * 24).toFixed(3)));
+                                        }}
+                                        disabled={isDiamondCategory}
+                                        placeholder="e.g. 87.5"
+                                        style={{ height: 28, fontSize: "0.7rem", ...(isDiamondCategory ? { opacity: 0.5 } : {}) }}
+                                    />
+                                ) : (
+                                    <input className="form-input" type="number"
+                                        min={0} max={1} step={0.001}
+                                        value={purity.toFixed(3)}
+                                        onChange={e => {
+                                            const p = Math.min(1, Math.max(0, Number(e.target.value)));
+                                            onFormChange("carat", Number((p * 24).toFixed(3)));
+                                        }}
+                                        disabled={isDiamondCategory}
+                                        style={{ height: 28, fontSize: "0.7rem", ...(isDiamondCategory ? { opacity: 0.5 } : {}) }}
+                                    />
+                                )}
                             </div>
                             <div>
                                 <div style={{ fontSize: "0.55rem", color: "var(--success)", marginBottom: 2, paddingLeft: 2 }}>Pure (g)</div>

@@ -50,7 +50,7 @@ export function rattiToKarat(ratti: number): number {
 export type LabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum" | "Fixed";
 
 /** Supported basis types for Kaat calculation */
-export type KaatBasis = "Ratti Kaat" | "Direct Weight";
+export type KaatBasis = "Ratti Kaat" | "Direct Weight" | "Pasa" | "Purity %";
 
 // ─── Gold Weight Calculations ──────────────────────────────────
 
@@ -152,8 +152,14 @@ export function calcGoldAmount(adjustedGoldWeight: number, goldRatePerGram: numb
     return result.toDecimalPlaces(4).toNumber();
 }
 
+/** Convert gold rate per Kacha Tola (11.664 g) → per gram */
 export function goldRateToPerGram(ratePerTola: number): number {
     return new Decimal(ratePerTola).div(GRAMS_PER_TOLA).toDecimalPlaces(4).toNumber();
+}
+
+/** Convert gold rate per Pakka Tola (12.150 g) → per gram */
+export function goldRateToPerGramPakka(ratePerTola: number): number {
+    return new Decimal(ratePerTola).div(PAKKA_TOLA_GRAMS).toDecimalPlaces(4).toNumber();
 }
 
 // ─── Customer Old Gold ─────────────────────────────────────────
@@ -246,19 +252,28 @@ export function calculateLineItem(params: {
     let kaatWeight = 0;
 
     if (isPurchase && params.kaatBasis && params.kaatRate !== undefined) {
-        let pureWeight = calcAdjustedGoldWeight(params.estimatedGoldWeight, params.carat);
+        const pureWeight = calcAdjustedGoldWeight(params.estimatedGoldWeight, params.carat);
 
-        if (params.kaatBasis === "Direct Weight") {
-            kaatWeight = params.kaatRate;
-            adjustedGoldWeight = new Decimal(pureWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
-        } else if (params.kaatBasis === "Ratti Kaat") {
+        if (params.kaatBasis === "Ratti Kaat") {
+            // Wt × (96 − ratti) / 96
             adjustedGoldWeight = new Decimal(params.estimatedGoldWeight)
                 .dividedBy(96)
                 .times(new Decimal(96).minus(params.kaatRate))
                 .toDecimalPlaces(4)
                 .toNumber();
             kaatWeight = new Decimal(params.estimatedGoldWeight).minus(adjustedGoldWeight).toDecimalPlaces(4).toNumber();
+        } else if (params.kaatBasis === "Direct Weight") {
+            kaatWeight = params.kaatRate;
+            adjustedGoldWeight = new Decimal(pureWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
+        } else if (params.kaatBasis === "Purity %") {
+            // Wt × (purity% / 100)  e.g. 60 × (87.5/100) = 52.500
+            adjustedGoldWeight = new Decimal(params.estimatedGoldWeight)
+                .times(new Decimal(params.kaatRate).div(100))
+                .toDecimalPlaces(4)
+                .toNumber();
+            kaatWeight = new Decimal(params.estimatedGoldWeight).minus(adjustedGoldWeight).toDecimalPlaces(4).toNumber();
         } else {
+            // "Pasa" or any unknown → carat-based, no ratti deduction
             adjustedGoldWeight = pureWeight;
         }
 

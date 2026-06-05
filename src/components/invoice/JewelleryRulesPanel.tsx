@@ -19,11 +19,15 @@ import { Scale, Gem, ArrowDown, Percent } from "lucide-react";
 import { formatCurrency, formatWeight } from "@/lib/utils";
 
 import { type TransactionType } from "@/types";
-import { type LabourBasis, type KaatBasis, type PolishLabourBasis, calcPasaAdjustedWeight } from "@/lib/calculationEngine";
+import { type LabourBasis, type KaatBasis, type PolishLabourBasis, calcPasaAdjustedWeight, goldRateToPerGram, goldRateToPerGramPakka } from "@/lib/calculationEngine";
 
 const POLISH_BASIS_OPTIONS: PolishLabourBasis[] = ["Per Tola", "Pasa", "Ratti Cut"];
 const LABOUR_BASIS_OPTIONS: LabourBasis[] = ["Per Tola", "Per Gram", "Per Piece", "Lump Sum"];
-const KAAT_BASIS_OPTIONS: KaatBasis[] = ["Direct Weight", "Ratti Kaat"];
+const KAAT_BASIS_OPTIONS: { value: KaatBasis; label: string }[] = [
+    { value: "Ratti Kaat", label: "Ratti  —  Wt × (96−ratti) / 96" },
+    { value: "Pasa",       label: "Pasa  —  No Kaat" },
+    { value: "Purity %",   label: "Purity %  —  Wt × (% / 100)" },
+];
 
 interface JewelleryRulesPanelProps {
     transactionType?: TransactionType;
@@ -198,7 +202,7 @@ export default function JewelleryRulesPanel({
                             }}
                         >
                             <div style={{ fontSize: "0.6875rem", fontWeight: 600, color: "var(--text-muted)", paddingBottom: "8px" }}>
-                                Kaat On
+                                Kaat
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Basis</label>
@@ -206,22 +210,29 @@ export default function JewelleryRulesPanel({
                                     className="form-select"
                                     value={kaatBasis}
                                     onChange={(e) => onKaatBasisChange && onKaatBasisChange(e.target.value as KaatBasis)}
-                                    style={{ height: "32px", fontSize: "0.75rem" }}
+                                    style={{ height: "32px", fontSize: "0.72rem" }}
                                 >
                                     {KAAT_BASIS_OPTIONS.map((opt) => (
-                                        <option key={opt} value={opt}>{opt}</option>
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rate @</label>
+                                <label className="form-label">
+                                    {kaatBasis === "Ratti Kaat" ? "Ratti Count"
+                                    : kaatBasis === "Purity %" ? "Purity % (e.g. 87.5)"
+                                    : "— No input"}
+                                </label>
                                 <input
                                     className="form-input"
                                     type="number"
-                                    step="any"
-                                    value={kaatRate}
+                                    step={kaatBasis === "Purity %" ? 0.01 : 0.1}
+                                    max={kaatBasis === "Purity %" ? 100 : undefined}
+                                    value={kaatRate ?? ""}
+                                    disabled={kaatBasis === "Pasa"}
                                     onChange={(e) => onKaatRateChange && onKaatRateChange(Number(e.target.value))}
-                                    style={{ height: "32px", fontSize: "0.8125rem" }}
+                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "e.g. 87.5" : "e.g. 2"}
+                                    style={{ height: "32px", fontSize: "0.8125rem", opacity: kaatBasis === "Pasa" ? 0.4 : 1 }}
                                 />
                             </div>
                         </div>
@@ -328,18 +339,18 @@ export default function JewelleryRulesPanel({
                             Gold Weight Summary
                         </div>
                         <div className="summary-row" style={{ padding: "3px 0" }}>
-                            <span className="label">Est. Gold Wt</span>
+                            <span className="label">Gross Wt</span>
                             <span className="value">{formatWeight(estimatedGoldWeight)} g</span>
                         </div>
-                        {transactionType === "PURCHASE" && (
+                        {transactionType === "PURCHASE" && kaatWeight > 0 && (
                             <div className="summary-row" style={{ padding: "3px 0" }}>
-                                <span className="label">Kaat Wt</span>
-                                <span className="value">{formatWeight(kaatWeight)} g</span>
+                                <span className="label" style={{ color: "var(--danger)" }}>Kaat Wt</span>
+                                <span className="value" style={{ color: "var(--danger)" }}>− {formatWeight(kaatWeight)} g</span>
                             </div>
                         )}
                         <div className="summary-row" style={{ padding: "3px 0" }}>
-                            <span className="label">{transactionType === "PURCHASE" ? "Pure Wt" : "Adj. Gold Wt"}</span>
-                            <span className="value" style={{ color: "var(--maroon)", fontWeight: 700 }}>
+                            <span className="label" style={{ color: "var(--success)", fontWeight: 700 }}>{transactionType === "PURCHASE" ? "Pure Wt" : "Adj. Gold Wt"}</span>
+                            <span className="value" style={{ color: "var(--success)", fontWeight: 700 }}>
                                 {formatWeight(
                                     transactionType === "PURCHASE" && pasaRate > 0
                                         ? calcPasaAdjustedWeight(adjustedGoldWeight, pasaRate)
@@ -348,17 +359,36 @@ export default function JewelleryRulesPanel({
                             </span>
                         </div>
                         {transactionType === "PURCHASE" && pasaRate > 0 && (
-                            <div className="summary-row" style={{ padding: "3px 0", borderBottom: "none" }}>
+                            <div className="summary-row" style={{ padding: "3px 0" }}>
                                 <span className="label" style={{ color: "var(--warning)", fontSize: "0.625rem" }}>Pasa Deduct</span>
                                 <span className="value" style={{ color: "var(--warning)", fontWeight: 600, fontSize: "0.7rem" }}>
-                                    -{formatWeight(adjustedGoldWeight - calcPasaAdjustedWeight(adjustedGoldWeight, pasaRate))} g
+                                    − {formatWeight(adjustedGoldWeight - calcPasaAdjustedWeight(adjustedGoldWeight, pasaRate))} g
                                 </span>
                             </div>
                         )}
-                        <div className="summary-row" style={{ padding: "3px 0", borderBottom: "none" }}>
+                        <div className="summary-row" style={{ padding: "3px 0", borderBottom: "1px dashed var(--gold-light)" }}>
                             <span className="label">Est. Gross Wt</span>
                             <span className="value">{formatWeight(estimatedGrossWeight)} g</span>
                         </div>
+                        {/* Both Tola Gold Amounts */}
+                        {adjustedGoldWeight > 0 && goldRate > 0 && (
+                            <div style={{ marginTop: 5, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                                <div style={{ background: "rgba(201,168,76,0.1)", borderRadius: 5, padding: "4px 6px" }}>
+                                    <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Pakka Tola</div>
+                                    <div style={{ fontSize: "0.58rem", color: "var(--text-muted)" }}>÷ 12.150 g</div>
+                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.8rem", color: "var(--maroon)" }}>
+                                        Rs. {formatCurrency(adjustedGoldWeight * goldRateToPerGramPakka(goldRate))}
+                                    </div>
+                                </div>
+                                <div style={{ background: "rgba(201,168,76,0.06)", borderRadius: 5, padding: "4px 6px" }}>
+                                    <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Kacha Tola</div>
+                                    <div style={{ fontSize: "0.58rem", color: "var(--text-muted)" }}>÷ 11.664 g</div>
+                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                                        Rs. {formatCurrency(adjustedGoldWeight * goldRateToPerGram(goldRate))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

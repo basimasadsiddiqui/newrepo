@@ -7,7 +7,7 @@ import {
     Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
-import { calculateLineItem, goldRateToPerGram, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
+import { calculateLineItem, goldRateToPerGram, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
 
 export interface BulkRow {
@@ -945,9 +945,25 @@ export default function BulkEntryPanel({
                                         </div>
                                     </>
                                 )}
+                                {/* Gold Amount — both Pakka and Kacha tola */}
+                                {quickCalc.adjustedGoldWeight > 0 && (
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, margin: "2px 0" }}>
+                                        <div>
+                                            <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gold (Pakka ÷12.150)</div>
+                                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>
+                                                Rs. {(quickCalc.adjustedGoldWeight * goldRateToPerGramPakka(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gold (Kacha ÷11.664)</div>
+                                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                                                Rs. {(quickCalc.adjustedGoldWeight * goldRateToPerGram(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 {/* Amount rows */}
                                 {[
-                                    { label: "Gold Value", value: quickCalc.goldAmount, show: true },
                                     { label: "Labour", value: quickCalc.labourAmount, show: (quickCalc.labourAmount ?? 0) !== 0 },
                                 ].filter(r => r.show).map(r => (
                                     <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>

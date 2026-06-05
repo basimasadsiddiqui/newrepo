@@ -93,6 +93,24 @@ const DEFAULT_ITEM_FORM: ItemEntryFormData = {
   metalTypeId: null,
 };
 
+// Purchase mode: keep category/description/carat/pieces/metal — only clear weight & stones
+function purchaseStickyReset(prev: ItemEntryFormData): ItemEntryFormData {
+  return {
+    ...prev,
+    estimatedGoldWeight: 0,
+    stoneWeight: 0,
+    stoneRate: 0,
+    beadsWeight: 0,
+    diamondWeight: 0,
+    stoneAmount: 0,
+    beadsAmount: 0,
+    diamondAmount: 0,
+    imageUrl: null,
+    isRepairingOrder: false,
+    isSampleGold: false,
+  };
+}
+
 const DRAFT_ITEMS_STORAGE_KEY = "draft_invoice_items";
 
 let itemCounter = 0;
@@ -910,7 +928,12 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         setItems((prev) => [...prev, newItem]);
         toast.success("Item added");
       }
-      setItemForm(DEFAULT_ITEM_FORM);
+      // Purchase: keep rates/category/carat sticky — only clear weight for next entry
+      if (transactionType === "PURCHASE" && editingItemIndex === null) {
+        setItemForm(prev => purchaseStickyReset(prev));
+      } else {
+        setItemForm(DEFAULT_ITEM_FORM);
+      }
       setDiamondEntries([]);
     } catch (error) {
       console.error("handleAddItem error:", error);
