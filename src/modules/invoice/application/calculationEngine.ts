@@ -283,7 +283,8 @@ export function calculateLineItem(params: {
         params.carat,
         goldAmount
     );
-    const labourAmount = calcLabourAmount(params.labourBasis, adjustedGoldWeight, params.labourRate, params.pieces);
+    // Labour is always on gross weight (estimatedGoldWeight), not net
+    const labourAmount = calcLabourAmount(params.labourBasis, params.estimatedGoldWeight, params.labourRate, params.pieces);
 
     const totalAmount = calcLineTotal(
         goldAmount,
