@@ -139,14 +139,29 @@ assertClose(lineResult.polishAmount, 2, 0.01, "Polish amount correct");
 assertClose(lineResult.labourAmount, 1200, 0.01, "Labour amount correct");
 assert(lineResult.totalAmount > 487583, "Total > gold amount");
 
+// Gold Amount must use the entered weight, not the purity/kaat-adjusted Pure Wt
+const partialKaratResult = calculateLineItem({
+    estimatedGoldWeight: 100,
+    carat: 21,
+    goldRatePerGram: 100,
+    polishRate: 0,
+    polishBasis: "Per Tola",
+    labourRate: 0,
+    labourBasis: "Per Tola",
+    stoneWeight: 0, beadsWeight: 0, diamondWeight: 0,
+    stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
+});
+assertClose(partialKaratResult.adjustedGoldWeight, 87.5, 0.001, "Pure Wt = 100 × 21/24 = 87.5g (reference only)");
+assertClose(partialKaratResult.goldAmount, 10000, 0.01, "Gold amount = rate(100) × entered weight(100) = 10,000, not Pure Wt");
+
 // ─── Invoice Summary ──────────────────────────────────────────
 
 console.log("\n📋 Invoice Summary");
 
 const summary = calculateInvoiceSummary({
     items: [
-        { totalAmount: 50000, adjustedGoldWeight: 5 },
-        { totalAmount: 75000, adjustedGoldWeight: 7 },
+        { totalAmount: 50000, estimatedGoldWeight: 5 },
+        { totalAmount: 75000, estimatedGoldWeight: 7 },
     ],
     otherCharges: 1000,
     discount: 500,

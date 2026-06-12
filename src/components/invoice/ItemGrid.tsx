@@ -13,7 +13,7 @@
 import { Pencil, Trash2, ImageIcon, LayoutList, EyeOff, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { InvoiceItem, TransactionType } from "@/types";
-import { formatCurrency, formatWeight } from "@/lib/utils";
+import { formatCurrency, formatCurrencyWhole, formatWeight } from "@/lib/utils";
 import ColumnVisibilityMenu, { type ColumnDef } from "./ColumnVisibilityMenu";
 
 interface ItemGridProps {
@@ -328,15 +328,15 @@ export default function ItemGrid({
                                     {show("beadsWt") && <td className="num">{formatWeight(item.beadsWeight)}</td>}
                                     {show("diamondWt") && <td className="num">{formatWeight(item.diamondWeight)}</td>}
                                     {show("goldAmt") && (
-                                        <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(item.goldAmount)}</td>
+                                        <td className="num" style={{ fontWeight: 600 }}>{formatCurrencyWhole(item.goldAmount)}</td>
                                     )}
-                                    {show("stoneAmt") && <td className="num">{formatCurrency(item.stoneAmount)}</td>}
-                                    {show("beadsAmt") && <td className="num">{formatCurrency(item.beadsAmount)}</td>}
-                                    {show("diamondAmt") && <td className="num">{formatCurrency(item.diamondAmount)}</td>}
+                                    {show("stoneAmt") && <td className="num">{formatCurrencyWhole(item.stoneAmount)}</td>}
+                                    {show("beadsAmt") && <td className="num">{formatCurrencyWhole(item.beadsAmount)}</td>}
+                                    {show("diamondAmt") && <td className="num">{formatCurrencyWhole(item.diamondAmount)}</td>}
                                     {show("polishAmt") && transactionType === "SALE" && (
                                         <td className="num">{formatCurrency(item.polishAmount)}</td>
                                     )}
-                                    {show("labourAmt") && <td className="num">{formatCurrency(item.labourAmount)}</td>}
+                                    {show("labourAmt") && <td className="num">{formatCurrencyWhole(item.labourAmount)}</td>}
                                     {show("total") && (
                                         <td className="num" style={{ fontWeight: 700, color: "var(--maroon)" }}>
                                             {formatCurrency(item.totalAmount)}
@@ -422,12 +422,12 @@ function TotalsRow({
             {show("stoneWt") && <td className="num">{formatWeight(totals.stoneWeight)}</td>}
             {show("beadsWt") && <td className="num">{formatWeight(totals.beadsWeight)}</td>}
             {show("diamondWt") && <td className="num">{formatWeight(totals.diamondWeight)}</td>}
-            {show("goldAmt") && <td className="num">{formatCurrency(totals.goldAmount)}</td>}
-            {show("stoneAmt") && <td className="num">{formatCurrency(totals.stoneAmount)}</td>}
-            {show("beadsAmt") && <td className="num">{formatCurrency(totals.beadsAmount)}</td>}
-            {show("diamondAmt") && <td className="num">{formatCurrency(totals.diamondAmount)}</td>}
+            {show("goldAmt") && <td className="num">{formatCurrencyWhole(totals.goldAmount)}</td>}
+            {show("stoneAmt") && <td className="num">{formatCurrencyWhole(totals.stoneAmount)}</td>}
+            {show("beadsAmt") && <td className="num">{formatCurrencyWhole(totals.beadsAmount)}</td>}
+            {show("diamondAmt") && <td className="num">{formatCurrencyWhole(totals.diamondAmount)}</td>}
             {show("polishAmt") && transactionType === "SALE" && <td className="num">{formatCurrency(totals.polishAmount)}</td>}
-            {show("labourAmt") && <td className="num">{formatCurrency(totals.labourAmount)}</td>}
+            {show("labourAmt") && <td className="num">{formatCurrencyWhole(totals.labourAmount)}</td>}
             {show("total") && (
                 <td className="num" style={{ fontWeight: 800, color: "var(--maroon)" }}>
                     {formatCurrency(totals.totalAmount)}

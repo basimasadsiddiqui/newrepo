@@ -2,7 +2,7 @@
 
 import { Plus, RotateCcw, Package, X, Gem } from "lucide-react";
 import type { Category, ItemEntryFormData, MetalTypeOption } from "@/types";
-import type { KaatBasis, LabourBasis } from "@/lib/calculationEngine";
+import { type KaatBasis, type LabourBasis, calcLabourAmount, gramsToTolaMashaRatti, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
 import { useRef, useState, type ChangeEvent } from "react";
 import StockSelectionModal from "./StockSelectionModal";
 import GemstoneModal from "./GemstoneModal";
@@ -118,6 +118,9 @@ export default function ItemEntryForm({
     const shortcuts = getShortcuts(categories, formData.categoryId, customCategoryName);
     const listId = "item-desc-list";
 
+    // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
+    const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
+
     // Stone amount preview: if rate > 0, compute from rate×weight; else manual amount
     const effectiveStoneAmt = formData.stoneRate > 0 && formData.stoneWeight > 0
         ? formData.stoneRate * formData.stoneWeight
@@ -204,7 +207,7 @@ export default function ItemEntryForm({
                 {/* ── Row 1: Category, Metal, Description, Rate, Carat, Pieces, Size ── */}
                 <div style={{
                     display: "grid",
-                    gridTemplateColumns: "1.2fr 0.9fr 2fr 0.9fr 0.7fr 0.55fr 0.55fr",
+                    gridTemplateColumns: "1.2fr 0.9fr 0.8fr 1.7fr 0.9fr 0.6fr 0.5fr 0.5fr",
                     gap: "6px",
                     marginBottom: "6px",
                 }}>
@@ -242,6 +245,19 @@ export default function ItemEntryForm({
                                 <option key={mt.id} value={mt.id}>{mt.name} ({mt.purity})</option>
                             ))}
                         </select>
+                    </div>
+
+                    {/* Tag Caption — printed on item tag / RFID */}
+                    <div className="form-group">
+                        <label className="form-label">Tag Caption</label>
+                        <input className="form-input"
+                            placeholder="e.g. Ban…"
+                            value={formData.tagCaption || ""}
+                            onChange={e => onFormChange("tagCaption", e.target.value)}
+                            list="item-tagcaption-list" />
+                        <datalist id="item-tagcaption-list">
+                            {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
+                        </datalist>
                     </div>
 
                     {/* Description */}
@@ -346,14 +362,15 @@ export default function ItemEntryForm({
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label" style={{ fontSize: "0.68rem" }}>
-                                    @ {kaatBasis === "Ratti Kaat" ? "Ratti" : kaatBasis === "Purity %" ? "Purity %" : "—"}
+                                    @ {kaatBasis === "Ratti Kaat" ? "Ratti" : kaatBasis === "Purity %" ? "Purity" : "—"}
                                 </label>
-                                <input className="form-input" type="number" min={0} step={0.1}
+                                <input className="form-input" type="number" min={0} step={kaatBasis === "Purity %" ? 0.001 : 0.1}
+                                    max={kaatBasis === "Purity %" ? 1 : undefined}
                                     style={{ height: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.85rem", opacity: kaatBasis === "Pasa" ? 0.4 : 1 }}
                                     disabled={kaatBasis === "Pasa"}
                                     value={kaatRate ?? ""}
                                     onChange={e => onKaatRateChange?.(Number(e.target.value))}
-                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "87.5" : "e.g. 2"} />
+                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "e.g. .88" : "e.g. 2"} />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label" style={{ fontSize: "0.68rem", color: "var(--danger)" }}>Kaat Wt</label>
@@ -390,6 +407,56 @@ export default function ItemEntryForm({
                                     value={pureWeightPreview > 0 ? pureWeightPreview.toFixed(3) : "—"}
                                     style={{ height: 30, background: "var(--success-bg)", color: "var(--success)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: "0.85rem" }} />
                             </div>
+                        </div>
+                        {/* Per Tola labour — Pakka vs Kacha comparison */}
+                        {labourBasis === "Per Tola" && (labourRate ?? 0) > 0 && formData.estimatedGoldWeight > 0 && (
+                            <div style={{
+                                display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
+                                padding: "6px 8px", marginTop: 6,
+                                background: "rgba(201,168,76,0.07)",
+                                border: "1px solid var(--border)", borderRadius: 6,
+                            }}>
+                                <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                                    Labour Rates
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Kacha Tola)</div>
+                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                        Rs. {calcLabourAmount("Per Tola", formData.estimatedGoldWeight, labourRate ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Pakka Tola)</div>
+                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.85rem", color: "var(--maroon)" }}>
+                                        Rs. {calcLabourAmount("Per Tola Pakka", formData.estimatedGoldWeight, labourRate ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {/* Tola / Masha / Ratti breakdown of Pure Wt */}
+                        {pureWeightPreview > 0 && (() => {
+                            const tmr = gramsToTolaMashaRatti(pureWeightPreview);
+                            return (
+                                <div style={{ marginTop: 6, background: "rgba(92,10,10,0.04)", borderRadius: 5, padding: "4px 6px", textAlign: "center" }}>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.75rem", color: "var(--maroon)" }}>
+                                        {tmr.tola} Tola {tmr.masha} Masha {tmr.ratti.toFixed(2)} Ratti
+                                    </span>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+
+                {/* Gold Weight — Pakka / Kacha Tola conversion */}
+                {transactionType === "PURCHASE" && formData.estimatedGoldWeight > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, padding: "4px 8px", marginBottom: 6, background: "rgba(201,168,76,0.08)", borderRadius: 5 }}>
+                        <div>
+                            <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola (÷12.150)</div>
+                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>{gramsToPakkaTola(formData.estimatedGoldWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
+                        </div>
+                        <div>
+                            <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola (÷11.664)</div>
+                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>{gramsToKachaTola(formData.estimatedGoldWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
                         </div>
                     </div>
                 )}
@@ -613,7 +680,8 @@ export default function ItemEntryForm({
                     setIsGemstoneModalOpen(false);
                     if (!hasGemstone) setHasGemstone(false);
                 }}
-                onConfirm={handleGemstoneConfirm} />
+                onConfirm={handleGemstoneConfirm}
+                categories={categories} />
 
             <BeadsModal
                 isOpen={isBeadsModalOpen}

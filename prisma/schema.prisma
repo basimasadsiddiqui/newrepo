@@ -226,6 +226,7 @@ model InvoiceItem {
   labourAmount         Decimal        @default(0) @db.Decimal(14, 4)
   totalAmount          Decimal        @default(0) @db.Decimal(14, 4)
   huid                 String?
+  tagCaption           String?
   stoneRate            Decimal?       @db.Decimal(14, 4)
   imageUrl             String?
   createdAt            DateTime       @default(now())

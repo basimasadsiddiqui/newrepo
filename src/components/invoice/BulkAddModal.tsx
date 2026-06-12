@@ -7,7 +7,7 @@ import {
     Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
-import { calculateLineItem, goldRateToPerGram } from "@/lib/calculationEngine";
+import { calculateLineItem, goldRateToPerGramPakka } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
 
 export interface BulkRow {
@@ -122,7 +122,8 @@ export default function BulkAddModal({
         }
     }, [isOpen]);
 
-    const goldRatePerGram = goldRateToPerGram(quickLocalRate || goldRate);
+    // Purchase gold/kaat amounts use Pakka Tola (12.150g), not Kacha Tola (11.664g)
+    const goldRatePerGram = goldRateToPerGramPakka(quickLocalRate || goldRate);
 
     // ── Ratti Kal calculation ──
     const rattiKalWeight = quickWeight > 0 && quickRatti > 0
@@ -599,7 +600,7 @@ export default function BulkAddModal({
                                             {localKaatBasis !== "None" && (
                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                     <label className="form-label" style={{ fontSize: "0.75rem" }}>
-                                                        {localKaatBasis === "Ratti Kaat" ? "Ratti Count" : localKaatBasis === "Direct Weight" ? "Weight (g)" : localKaatBasis === "Pasa" ? "Pasa %" : "Purity %"}
+                                                        {localKaatBasis === "Ratti Kaat" ? "Ratti Count" : localKaatBasis === "Direct Weight" ? "Weight (g)" : localKaatBasis === "Pasa" ? "Pasa %" : "Purity"}
                                                     </label>
                                                     <input className="form-input" type="number" min={0} step={0.1} value={localKaatRate || ""} onChange={e => setLocalKaatRate(Number(e.target.value))} onFocus={sel} style={{ height: 32, fontSize: "0.8rem", fontFamily: "var(--font-mono)" }} />
                                                 </div>
@@ -733,7 +734,7 @@ export default function BulkAddModal({
                                                 transactionType: "PURCHASE",
                                                 estimatedGoldWeight: row.estimatedGoldWeight,
                                                 carat: row.carat,
-                                                goldRatePerGram: goldRateToPerGram(goldRate),
+                                                goldRatePerGram: goldRateToPerGramPakka(goldRate),
                                                 polishRate, polishBasis,
                                                 labourRate, labourBasis,
                                                 kaatBasis, kaatRate,

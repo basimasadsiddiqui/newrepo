@@ -7,13 +7,14 @@ import {
     Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
-import { calculateLineItem, goldRateToPerGram, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
+import { calculateLineItem, goldRateToPerGram, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola, gramsToTolaMashaRatti } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
 
 export interface BulkRow {
     id: string;
     categoryId: string;
     description: string;
+    tagCaption?: string;
     carat: number;
     pieces: number;
     estimatedGoldWeight: number;
@@ -32,7 +33,7 @@ export interface BulkRow {
 }
 
 type LocalKaatBasis = "Ratti Kaat" | "Purity" | "None";
-type StoneRateBasis = "Per Carat" | "Per Gram" | "Per Piece" | "Lumpsum";
+type StoneRateBasis = "Per Carat" | "Per Gram" | "Per Piece" | "Per Cent" | "Lumpsum";
 type LocalLabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum";
 
 interface StoneRow {
@@ -43,11 +44,13 @@ interface StoneRow {
     unit: "ct" | "g";
     rateBasis: StoneRateBasis;
     rate: number;
+    tagCaption: string;
+    detail: string;
 }
 
 let stoneCounter = 0;
 function mkStoneRow(): StoneRow {
-    return { id: `stone-${Date.now()}-${++stoneCounter}`, type: "", pieces: 1, value: 0, unit: "g", rateBasis: "Per Gram", rate: 0 };
+    return { id: `stone-${Date.now()}-${++stoneCounter}`, type: "", pieces: 1, value: 0, unit: "g", rateBasis: "Per Gram", rate: 0, tagCaption: "", detail: "" };
 }
 
 interface BulkEntryPanelProps {
@@ -71,6 +74,7 @@ function mkRow(carat = 21): BulkRow {
         id: `bulk-${Date.now()}-${++rowCounter}`,
         categoryId: "",
         description: "",
+        tagCaption: "",
         carat,
         pieces: 0,
         estimatedGoldWeight: 0,
@@ -100,6 +104,7 @@ export default function BulkEntryPanel({
 
     // ── Quick entry state ──
     const [quickDesc, setQuickDesc] = useState("");
+    const [quickTagCaption, setQuickTagCaption] = useState("");
     const [quickWeight, setQuickWeight] = useState<number>(0);
     const [quickLocalRate, setQuickLocalRate] = useState<number>(0);
     const [quickPieces, setQuickPieces] = useState<number>(1);
@@ -111,13 +116,18 @@ export default function BulkEntryPanel({
     const [editingStoneId, setEditingStoneId] = useState<string | null>(null);
     const [showStoneModal, setShowStoneModal] = useState(false);
 
+    // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
+    const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
+
     // derived from stone rows
     const totalStoneWeightG  = stoneRows.reduce((sum, r) => sum + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
-    const totalStoneWeightCt = stoneRows.reduce((sum, r) => sum + (r.unit === "g"  ? r.value / 0.2 : r.value), 0);
+    const gramStoneRowsTotalG = stoneRows.filter(r => r.unit === "g").reduce((sum, r) => sum + r.value, 0);
+    const caratStoneRowsTotalCt = stoneRows.filter(r => r.unit === "ct").reduce((sum, r) => sum + r.value, 0);
     const totalStoneAmount = stoneRows.reduce((sum, r) => {
         const wG  = r.unit === "ct" ? r.value * 0.2 : r.value;       // always in grams
         const wCt = r.unit === "g"  ? r.value / 0.2 : r.value;       // always in carats (1g = 5ct)
         if (r.rateBasis === "Per Carat") return sum + wCt * r.rate;
+        if (r.rateBasis === "Per Cent")  return sum + wCt * 100 * r.rate;
         if (r.rateBasis === "Per Gram")  return sum + wG  * r.rate;
         if (r.rateBasis === "Per Piece") return sum + r.pieces * r.rate;
         return sum + r.rate; // Lumpsum — flat
@@ -144,20 +154,21 @@ export default function BulkEntryPanel({
 
     // intentionally not syncing goldRate prop to local rate — user enters it fresh
 
-    const goldRatePerGram = goldRateToPerGram(quickLocalRate || goldRate);
+    // Purchase gold/kaat amounts use Pakka Tola (12.150g), not Kacha Tola (11.664g)
+    const goldRatePerGram = goldRateToPerGramPakka(quickLocalRate || goldRate);
 
     // ── Pure weight after kaat ──
     // Pasa    = auto from carat, no manual entry: weight × (carat/24)
-    // Purity  = user enters custom purity %:       weight × (rate/100)
+    // Purity  = user enters purity as a decimal:   weight × rate
     // Ratti   = user enters ratti count:           weight × (96−ratti)/96
     const kaatPureWeight = useMemo(() => {
         if (quickWeight <= 0) return null;
         // Ratti: Weight × (96 − ratti) / 96
         if (localKaatBasis === "Ratti Kaat" && localKaatRate > 0)
             return Math.round(quickWeight * (96 - localKaatRate) / 96 * 1000) / 1000;
-        // Purity: Weight × (Purity% / 100), e.g. 200 × 88% = 176
+        // Purity: Weight × purity (decimal), e.g. 200 × 0.88 = 176
         if (localKaatBasis === "Purity" && localKaatRate > 0)
-            return Math.round(quickWeight * (localKaatRate / 100) * 1000) / 1000;
+            return Math.round(quickWeight * localKaatRate * 1000) / 1000;
         // Pasa (None): no deduction
         return null;
     }, [quickWeight, localKaatBasis, localKaatRate]);
@@ -230,6 +241,7 @@ export default function BulkEntryPanel({
 
     const resetAll = () => {
         setQuickDesc("");
+        setQuickTagCaption("");
         setQuickWeight(0);
         setQuickLocalRate(0);
         setQuickPieces(1);
@@ -258,6 +270,7 @@ export default function BulkEntryPanel({
             id: `bulk-quick-${Date.now()}`,
             categoryId: "",
             description: quickDesc || "Bulk Gold Purchase",
+            tagCaption: quickTagCaption,
             carat: quickCarat,
             pieces: quickPieces,
             estimatedGoldWeight: quickWeight,
@@ -333,6 +346,10 @@ export default function BulkEntryPanel({
                     boxShadow: "0 24px 64px rgba(0,0,0,0.38)",
                     overflow: "hidden",
                 }}>
+                    <datalist id="bulk-tag-caption-suggestions">
+                        {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
+                    </datalist>
+
                     {/* Modal header */}
                     <div style={{
                         padding: "12px 16px",
@@ -417,6 +434,7 @@ export default function BulkEntryPanel({
                                         onChange={e => setStoneDraft(d => ({ ...d, rateBasis: e.target.value as StoneRateBasis }))}>
                                         <option value="Per Gram">Per Gram</option>
                                         <option value="Per Carat">Per Carat</option>
+                                        <option value="Per Cent">Per Cent</option>
                                         <option value="Per Piece">Per Piece</option>
                                         <option value="Lumpsum">Lumpsum</option>
                                     </select>
@@ -424,7 +442,7 @@ export default function BulkEntryPanel({
                                 {/* Rate */}
                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                     <label className="form-label" style={{ fontSize: "0.7rem" }}>
-                                        Rate ({stoneDraft.rateBasis === "Lumpsum" ? "flat" : stoneDraft.rateBasis === "Per Carat" ? "Rs/ct" : stoneDraft.rateBasis === "Per Piece" ? "Rs/pc" : "Rs/g"})
+                                        Rate ({stoneDraft.rateBasis === "Lumpsum" ? "flat" : stoneDraft.rateBasis === "Per Carat" ? "Rs/ct" : stoneDraft.rateBasis === "Per Cent" ? "Rs/cent" : stoneDraft.rateBasis === "Per Piece" ? "Rs/pc" : "Rs/g"})
                                     </label>
                                     <input className="form-input" type="number" min={0} step={0.01}
                                         value={stoneDraft.rate || ""}
@@ -442,6 +460,7 @@ export default function BulkEntryPanel({
                                             const wG  = stoneDraft.unit === "ct" ? stoneDraft.value * 0.2 : stoneDraft.value;
                                             const wCt = stoneDraft.unit === "g"  ? stoneDraft.value / 0.2 : stoneDraft.value;
                                             const amt = stoneDraft.rateBasis === "Per Carat" ? wCt * stoneDraft.rate :
+                                                        stoneDraft.rateBasis === "Per Cent"  ? wCt * 100 * stoneDraft.rate :
                                                         stoneDraft.rateBasis === "Per Gram"  ? wG  * stoneDraft.rate :
                                                         stoneDraft.rateBasis === "Per Piece" ? stoneDraft.pieces * stoneDraft.rate :
                                                         stoneDraft.rate;
@@ -462,6 +481,30 @@ export default function BulkEntryPanel({
                                     <Plus size={13} /> Add
                                 </button>
                             </div>
+                            {/* Tag Caption / Detail (for printed tags) */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>Tag Caption</label>
+                                    <input className="form-input"
+                                        placeholder="e.g. Ruby, Ban…"
+                                        value={stoneDraft.tagCaption}
+                                        onChange={e => setStoneDraft(d => ({ ...d, tagCaption: e.target.value }))}
+                                        onFocus={sel}
+                                        list="bulk-tag-caption-suggestions"
+                                        style={{ fontSize: "0.82rem" }}
+                                    />
+                                </div>
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label" style={{ fontSize: "0.7rem" }}>Detail</label>
+                                    <input className="form-input"
+                                        placeholder="e.g. Burma Ruby, oval cut"
+                                        value={stoneDraft.detail}
+                                        onChange={e => setStoneDraft(d => ({ ...d, detail: e.target.value }))}
+                                        onFocus={sel}
+                                        style={{ fontSize: "0.82rem" }}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
                         {/* ── Stone table (spreadsheet style, each row editable) ── */}
@@ -474,7 +517,7 @@ export default function BulkEntryPanel({
                                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
                                     <thead>
                                         <tr style={{ background: "var(--cream-light)", borderBottom: "2px solid var(--border)" }}>
-                                            {["S.No", "Type", "Pcs", "Weight", "Unit", "Basis", "Rate", "Amount", ""].map(h => (
+                                            {["S.No", "Type", "Tag Caption", "Detail", "Pcs", "Weight", "Unit", "Basis", "Rate", "Amount", ""].map(h => (
                                                 <th key={h} style={{ padding: "6px 8px", textAlign: h === "Amount" || h === "Rate" ? "right" : "left", fontWeight: 700, fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
                                             ))}
                                         </tr>
@@ -485,6 +528,7 @@ export default function BulkEntryPanel({
                                             const srWeightCt = sr.unit === "g"  ? sr.value / 0.2 : sr.value;
                                             const srAmount =
                                                 sr.rateBasis === "Per Carat" ? srWeightCt * sr.rate :
+                                                sr.rateBasis === "Per Cent"  ? srWeightCt * 100 * sr.rate :
                                                 sr.rateBasis === "Per Gram"  ? srWeightG  * sr.rate :
                                                 sr.rateBasis === "Per Piece" ? sr.pieces  * sr.rate :
                                                 sr.rate;
@@ -499,6 +543,20 @@ export default function BulkEntryPanel({
                                                         {isEditing
                                                             ? <input className="form-input" value={sr.type} onChange={e => updateStoneRow(sr.id, "type", e.target.value)} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
                                                             : <span style={{ cursor: "pointer" }} onClick={() => setEditingStoneId(sr.id)}>{sr.type || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Tag Caption */}
+                                                    <td style={{ padding: "4px 6px", minWidth: 90 }}>
+                                                        {isEditing
+                                                            ? <input className="form-input" value={sr.tagCaption} onChange={e => updateStoneRow(sr.id, "tagCaption", e.target.value)} onFocus={sel} list="bulk-tag-caption-suggestions" style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
+                                                            : <span style={{ cursor: "pointer" }} onClick={() => setEditingStoneId(sr.id)}>{sr.tagCaption || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                                                        }
+                                                    </td>
+                                                    {/* Detail */}
+                                                    <td style={{ padding: "4px 6px", minWidth: 110 }}>
+                                                        {isEditing
+                                                            ? <input className="form-input" value={sr.detail} onChange={e => updateStoneRow(sr.id, "detail", e.target.value)} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
+                                                            : <span style={{ cursor: "pointer" }} onClick={() => setEditingStoneId(sr.id)}>{sr.detail || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
                                                         }
                                                     </td>
                                                     {/* Pcs */}
@@ -532,7 +590,7 @@ export default function BulkEntryPanel({
                                                     <td style={{ padding: "4px 6px", width: 90 }}>
                                                         {isEditing
                                                             ? <select className="form-select" value={sr.rateBasis} onChange={e => updateStoneRow(sr.id, "rateBasis", e.target.value as StoneRateBasis)} style={{ fontSize: "0.72rem", padding: "2px 4px", height: 28 }}>
-                                                                {(["Per Gram", "Per Carat", "Per Piece", "Lumpsum"] as StoneRateBasis[]).map(b => <option key={b} value={b}>{b}</option>)}
+                                                                {(["Per Gram", "Per Carat", "Per Cent", "Per Piece", "Lumpsum"] as StoneRateBasis[]).map(b => <option key={b} value={b}>{b}</option>)}
                                                               </select>
                                                             : <span style={{ cursor: "pointer", fontSize: "0.72rem", color: "var(--text-secondary)" }} onClick={() => setEditingStoneId(sr.id)}>{sr.rateBasis}</span>
                                                         }
@@ -580,7 +638,10 @@ export default function BulkEntryPanel({
                             <div>
                                 <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Total Stones</div>
                                 <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.95rem", color: "var(--text-secondary)" }}>
-                                    {stoneRows.reduce((s, r) => s + r.pieces, 0)} pcs · {totalStoneWeightCt.toFixed(2)} ct / {totalStoneWeightG.toFixed(3)} g
+                                    {stoneRows.reduce((s, r) => s + r.pieces, 0)} pcs · {[
+                                        gramStoneRowsTotalG > 0 ? `${gramStoneRowsTotalG.toFixed(3)} g` : null,
+                                        caratStoneRowsTotalCt > 0 ? `${caratStoneRowsTotalCt.toFixed(2)} ct` : null,
+                                    ].filter(Boolean).join(" + ") || "0.000 g"}
                                 </div>
                             </div>
                             <div>
@@ -644,16 +705,32 @@ export default function BulkEntryPanel({
             {mode === "quick" && (
                 <div style={{ padding: "12px 14px", overflowY: "auto" }}>
 
-                    {/* 1. Description */}
-                    <div className="form-group" style={{ marginBottom: 8 }}>
-                        <label className="form-label" style={{ fontSize: "0.8rem" }}>Description</label>
-                        <input className="form-input"
-                            placeholder="e.g. Bulk Gold Stock — Batch #12"
-                            value={quickDesc}
-                            onChange={e => setQuickDesc(e.target.value)}
-                            onFocus={sel}
-                            style={{ fontSize: "0.9rem" }}
-                        />
+                    {/* 1. Tag Caption + Description */}
+                    <div style={{ display: "grid", gridTemplateColumns: "0.6fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Tag Caption</label>
+                            <input className="form-input"
+                                placeholder="e.g. Ban…"
+                                value={quickTagCaption}
+                                onChange={e => setQuickTagCaption(e.target.value)}
+                                onFocus={sel}
+                                list="bulk-quick-tagcaption-list"
+                                style={{ fontSize: "0.9rem" }}
+                            />
+                            <datalist id="bulk-quick-tagcaption-list">
+                                {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
+                            </datalist>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Description</label>
+                            <input className="form-input"
+                                placeholder="e.g. Bulk Gold Stock — Batch #12"
+                                value={quickDesc}
+                                onChange={e => setQuickDesc(e.target.value)}
+                                onFocus={sel}
+                                style={{ fontSize: "0.9rem" }}
+                            />
+                        </div>
                     </div>
 
                     {/* 2. Weight + Pcs + Rate — always 3-column */}
@@ -696,6 +773,20 @@ export default function BulkEntryPanel({
                         </div>
                     </div>
 
+                    {/* Gold Weight — Pakka / Kacha Tola conversion */}
+                    {quickWeight > 0 && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, marginBottom: 8 }}>
+                            <div>
+                                <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola (÷12.150)</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>{gramsToPakkaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola (÷11.664)</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>{gramsToKachaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* 3. Purity & Kaat */}
                     <div style={{ padding: "8px 10px", background: "var(--cream-light)", border: "1px solid var(--gold-light)", borderRadius: 8, marginBottom: 8 }}>
                         <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
@@ -732,15 +823,15 @@ export default function BulkEntryPanel({
                                     {localKaatBasis === "Ratti Kaat"
                                         ? "Ratti  —  Wt × (96 − ratti) / 96"
                                         : localKaatBasis === "Purity"
-                                        ? "Purity %  —  Wt × (% / 100)"
+                                        ? "Purity  —  Wt × purity"
                                         : "Pasa  —  No Cutting"}
                                 </label>
-                                <input className="form-input" type="number" min={0} step={0.1}
-                                    max={localKaatBasis === "Purity" ? 100 : undefined}
+                                <input className="form-input" type="number" min={0} step={localKaatBasis === "Purity" ? 0.001 : 0.1}
+                                    max={localKaatBasis === "Purity" ? 1 : undefined}
                                     value={localKaatRate || ""}
                                     onChange={e => setLocalKaatRate(Number(e.target.value))}
                                     onFocus={sel}
-                                    placeholder={localKaatBasis === "None" ? "—" : localKaatBasis === "Purity" ? "e.g. 88" : "e.g. 4"}
+                                    placeholder={localKaatBasis === "None" ? "—" : localKaatBasis === "Purity" ? "e.g. .88" : "e.g. 4"}
                                     disabled={localKaatBasis === "None"}
                                     style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem", opacity: localKaatBasis === "None" ? 0.4 : 1 }}
                                 />
@@ -757,7 +848,7 @@ export default function BulkEntryPanel({
                                     <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)" }}>Wt × (96−{localKaatRate}) / 96</span>
                                 )}
                                 {localKaatBasis === "Purity" && localKaatRate > 0 && (
-                                    <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)" }}>{quickWeight} × {(localKaatRate / 100).toFixed(3)} = {(quickWeight * localKaatRate / 100).toFixed(3)} g</span>
+                                    <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)" }}>{quickWeight} × {localKaatRate.toFixed(3)} = {(quickWeight * localKaatRate).toFixed(3)} g</span>
                                 )}
                             </div>
                         )}
@@ -788,7 +879,7 @@ export default function BulkEntryPanel({
                         </div>
                     </div>
 
-                    {/* Per Tola labour breakdown — Pakka vs Kacha */}
+                    {/* Per Tola labour — Pakka vs Kacha comparison */}
                     {localLabourBasis === "Per Tola" && localLabourRate > 0 && quickWeight > 0 && (
                         <div style={{
                             display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
@@ -796,17 +887,11 @@ export default function BulkEntryPanel({
                             background: "rgba(201,168,76,0.07)",
                             border: "1px solid var(--gold-light)", borderRadius: 7,
                         }}>
-                            <div>
-                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>By Pakka Tola (÷12.150)</div>
-                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 2 }}>
-                                    {gramsToPakkaTola(quickWeight).toFixed(4)} tola × Rs.{localLabourRate}
-                                </div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.88rem", color: "var(--maroon)" }}>
-                                    Rs. {(gramsToPakkaTola(quickWeight) * localLabourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                </div>
+                            <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                                Labour Rates
                             </div>
                             <div>
-                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>By Kacha Tola (÷11.664)</div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Kacha Tola)</div>
                                 <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 2 }}>
                                     {gramsToKachaTola(quickWeight).toFixed(4)} tola × Rs.{localLabourRate}
                                 </div>
@@ -814,8 +899,17 @@ export default function BulkEntryPanel({
                                     Rs. {(gramsToKachaTola(quickWeight) * localLabourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
                                 </div>
                             </div>
+                            <div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Pakka Tola)</div>
+                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 2 }}>
+                                    {gramsToPakkaTola(quickWeight).toFixed(4)} tola × Rs.{localLabourRate}
+                                </div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.88rem", color: "var(--maroon)" }}>
+                                    Rs. {(gramsToPakkaTola(quickWeight) * localLabourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                </div>
+                            </div>
                             <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", color: "var(--text-muted)", marginTop: 1 }}>
-                                ↑ On gross weight ({quickWeight.toFixed(3)} g) — engine uses Kacha Tola
+                                ↑ On gross weight ({quickWeight.toFixed(3)} g) — engine uses Kacha Tola by default
                             </div>
                         </div>
                     )}
@@ -911,22 +1005,11 @@ export default function BulkEntryPanel({
                                         {quickWeight.toFixed(3)} g
                                     </span>
                                 </div>
-                                {/* Tola conversions */}
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, margin: "2px 0" }}>
-                                    <div>
-                                        <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola (÷12.150)</div>
-                                        <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>{gramsToPakkaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola (÷11.664)</div>
-                                        <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>{gramsToKachaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
-                                    </div>
-                                </div>
                                 {kaatDeduction > 0 && (
                                     <>
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "0.78rem" }}>
                                             <span style={{ color: "var(--danger)" }}>
-                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : `Purity ${localKaatRate}%`})
+                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : `Purity ${localKaatRate}`})
                                             </span>
                                             <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
                                                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--danger)", fontWeight: 600 }}>
@@ -945,23 +1028,34 @@ export default function BulkEntryPanel({
                                         </div>
                                     </>
                                 )}
-                                {/* Gold Amount — both Pakka and Kacha tola */}
-                                {quickCalc.adjustedGoldWeight > 0 && (
+                                {/* Gold Amount — both Pakka and Kacha tola, based on entered Gold Wt */}
+                                {quickWeight > 0 && (
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, margin: "2px 0" }}>
                                         <div>
                                             <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gold (Pakka ÷12.150)</div>
                                             <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>
-                                                Rs. {(quickCalc.adjustedGoldWeight * goldRateToPerGramPakka(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                                Rs. {(quickWeight * goldRateToPerGramPakka(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
                                             </div>
                                         </div>
                                         <div>
                                             <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gold (Kacha ÷11.664)</div>
                                             <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                                                Rs. {(quickCalc.adjustedGoldWeight * goldRateToPerGram(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                                Rs. {(quickWeight * goldRateToPerGram(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
                                             </div>
                                         </div>
                                     </div>
                                 )}
+                                {/* Tola / Masha / Ratti breakdown of Pure Wt */}
+                                {quickCalc.adjustedGoldWeight > 0 && (() => {
+                                    const tmr = gramsToTolaMashaRatti(quickCalc.adjustedGoldWeight);
+                                    return (
+                                        <div style={{ background: "rgba(92,10,10,0.04)", borderRadius: 5, padding: "4px 6px", margin: "2px 0", textAlign: "center" }}>
+                                            <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.75rem", color: "var(--maroon)" }}>
+                                                {tmr.tola} Tola {tmr.masha} Masha {tmr.ratti.toFixed(2)} Ratti
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                                 {/* Amount rows */}
                                 {[
                                     { label: "Labour", value: quickCalc.labourAmount, show: (quickCalc.labourAmount ?? 0) !== 0 },
@@ -978,7 +1072,10 @@ export default function BulkEntryPanel({
                                         <span style={{ color: "var(--text-muted)" }}>Stone / Gem</span>
                                         <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
                                             <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                                                {totalStoneWeightCt.toFixed(2)} ct &nbsp;/&nbsp; {totalStoneWeightG.toFixed(3)} g
+                                                {[
+                                                    gramStoneRowsTotalG > 0 ? `${gramStoneRowsTotalG.toFixed(3)} g` : null,
+                                                    caratStoneRowsTotalCt > 0 ? `${caratStoneRowsTotalCt.toFixed(2)} ct` : null,
+                                                ].filter(Boolean).join(" + ") || "0.000 g"}
                                             </span>
                                             <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
                                                 Rs. {totalStoneAmount.toLocaleString("en-PK", { maximumFractionDigits: 0 })}
@@ -1068,11 +1165,14 @@ export default function BulkEntryPanel({
                     </div>
 
                     {/* Table — new columns: Gross Wt, Notes; removed Purity */}
+                    <datalist id="bulk-row-tagcaption-list">
+                        {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
+                    </datalist>
                     <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                             <thead>
                                 <tr style={{ background: "linear-gradient(180deg, var(--maroon-light), var(--maroon))", color: "rgba(250,246,241,0.95)", position: "sticky", top: 0, zIndex: 2 }}>
-                                    {["#", "Category", "Description", "Pcs", "Carat", "Gross Wt (g)", "Gold Wt (g)", "Stone Wt (g)", "Notes", ""].map(h => (
+                                    {["#", "Category", "Tag Caption", "Description", "Pcs", "Carat", "Gross Wt (g)", "Gold Wt (g)", "Stone Wt (g)", "Notes", ""].map(h => (
                                         <th key={h} style={{ padding: "8px 9px", textAlign: "left", fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", borderRight: "1px solid rgba(255,255,255,0.07)" }}>{h}</th>
                                     ))}
                                 </tr>
@@ -1092,6 +1192,15 @@ export default function BulkEntryPanel({
                                                     <option value="">Select…</option>
                                                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                                 </select>
+                                            </td>
+                                            <td style={{ padding: "4px 5px", minWidth: 90 }}>
+                                                <input className="form-input" style={{ height: 30, fontSize: "0.75rem" }}
+                                                    placeholder="e.g. Ban…"
+                                                    value={row.tagCaption || ""}
+                                                    onFocus={sel}
+                                                    list="bulk-row-tagcaption-list"
+                                                    onChange={e => update(row.id, "tagCaption", e.target.value)}
+                                                />
                                             </td>
                                             <td style={{ padding: "4px 5px", minWidth: 160 }}>
                                                 <input className="form-input" style={{ height: 30, fontSize: "0.75rem" }}
@@ -1173,7 +1282,7 @@ export default function BulkEntryPanel({
                             {rows.some(r => r.estimatedGoldWeight > 0) && (
                                 <tfoot>
                                     <tr>
-                                        <td colSpan={5} style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontSize: "0.6875rem", fontWeight: 700, color: "var(--maroon)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Totals</td>
+                                        <td colSpan={6} style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontSize: "0.6875rem", fontWeight: 700, color: "var(--maroon)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Totals</td>
                                         <td style={{ padding: "7px 9px", background: "linear-gradient(to right, var(--cream), rgba(201,168,76,0.08))", borderTop: "2px solid var(--gold)", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-secondary)", fontSize: "0.8rem" }}>
                                             {rows.reduce((s, r) => s + (r.grossWeight || 0), 0).toFixed(3)} g
                                         </td>

@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Gem, Settings } from "lucide-react";
 import { loadGemstonePresets, type GemstonePreset } from "@/lib/gemstoneRates";
+import type { Category } from "@/types";
 
-type RateBasis = "Per Gram" | "Per Carat" | "Per Piece" | "Lumpsum";
+type RateBasis = "Per Gram" | "Per Carat" | "Per Piece" | "Per Cent" | "Lumpsum";
 
 interface StoneRow {
     id: string;
@@ -14,12 +15,15 @@ interface StoneRow {
     unit: "ct" | "g";
     rateBasis: RateBasis;
     rate: number;
+    tagCaption: string;
+    detail: string;
 }
 
 interface GemstoneModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: (stoneWeight: number, stoneAmount: number, note: string) => void;
+    categories?: Category[];
 }
 
 let counter = 0;
@@ -28,6 +32,7 @@ function mkRow(): StoneRow {
         id: `stone-${Date.now()}-${++counter}`,
         type: "", pieces: 1, value: 0, unit: "g",
         rateBasis: "Per Gram", rate: 0,
+        tagCaption: "", detail: "",
     };
 }
 
@@ -37,12 +42,13 @@ function calcAmount(r: StoneRow): number {
     const wG  = r.unit === "ct" ? r.value * 0.2 : r.value;
     const wCt = r.unit === "g"  ? r.value / 0.2 : r.value;
     if (r.rateBasis === "Per Carat") return wCt * r.rate;
+    if (r.rateBasis === "Per Cent")  return wCt * 100 * r.rate;
     if (r.rateBasis === "Per Gram")  return wG  * r.rate;
     if (r.rateBasis === "Per Piece") return r.pieces * r.rate;
     return r.rate; // Lumpsum
 }
 
-export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneModalProps) {
+export default function GemstoneModal({ isOpen, onClose, onConfirm, categories = [] }: GemstoneModalProps) {
     const [rows, setRows] = useState<StoneRow[]>([]);
     const [draft, setDraft] = useState<StoneRow>(() => mkRow());
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -65,13 +71,17 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
             unit: isPerCarat ? "ct" : "g",
             rateBasis: isPerCarat ? "Per Carat" : "Per Gram",
             rate: isPerCarat ? p.pricePerCarat : p.pricePerGram,
+            tagCaption: "", detail: "",
         };
         setRows(prev => [...prev, newRow]);
         setEditingId(newRow.id); // open it for weight entry immediately
     };
 
-    const totalWeightG  = rows.reduce((s, r) => s + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
-    const totalWeightCt = rows.reduce((s, r) => s + (r.unit === "g"  ? r.value / 0.2 : r.value), 0);
+    const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
+
+    const totalWeightG   = rows.reduce((s, r) => s + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
+    const gramRowsTotalG  = rows.filter(r => r.unit === "g").reduce((s, r) => s + r.value, 0);
+    const caratRowsTotalCt = rows.filter(r => r.unit === "ct").reduce((s, r) => s + r.value, 0);
     const totalAmount   = rows.reduce((s, r) => s + calcAmount(r), 0);
     const totalPieces   = rows.reduce((s, r) => s + r.pieces, 0);
 
@@ -106,12 +116,16 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
         }}>
             <div style={{
                 background: "white", borderRadius: 12,
-                width: "min(800px, 96vw)", maxHeight: "90vh",
+                width: "min(1000px, 96vw)", maxHeight: "90vh",
                 display: "flex", flexDirection: "column",
                 boxShadow: "0 24px 64px rgba(0,0,0,0.38)",
                 overflow: "hidden",
             }}>
                 {/* Header */}
+                <datalist id="gemstone-tag-caption-suggestions">
+                    {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
+                </datalist>
+
                 <div style={{
                     padding: "12px 16px",
                     background: "linear-gradient(135deg, var(--maroon) 0%, var(--maroon-dark) 100%)",
@@ -237,6 +251,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                                 onChange={e => setDraft(d => ({ ...d, rateBasis: e.target.value as RateBasis }))}>
                                 <option value="Per Gram">Per Gram</option>
                                 <option value="Per Carat">Per Carat</option>
+                                <option value="Per Cent">Per Cent</option>
                                 <option value="Per Piece">Per Piece</option>
                                 <option value="Lumpsum">Lumpsum</option>
                             </select>
@@ -244,7 +259,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                         {/* Rate */}
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.7rem" }}>
-                                Rate ({draft.rateBasis === "Lumpsum" ? "flat" : draft.rateBasis === "Per Carat" ? "Rs/ct" : draft.rateBasis === "Per Piece" ? "Rs/pc" : "Rs/g"})
+                                Rate ({draft.rateBasis === "Lumpsum" ? "flat" : draft.rateBasis === "Per Carat" ? "Rs/ct" : draft.rateBasis === "Per Cent" ? "Rs/cent" : draft.rateBasis === "Per Piece" ? "Rs/pc" : "Rs/g"})
                             </label>
                             <input className="form-input" type="number" min={0} step={0.01}
                                 value={draft.rate || ""}
@@ -273,6 +288,30 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                             <Plus size={13} /> Add
                         </button>
                     </div>
+                    {/* Tag Caption / Detail (for printed tags) */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.7rem" }}>Tag Caption</label>
+                            <input className="form-input"
+                                placeholder="e.g. Ruby, Ban…"
+                                value={draft.tagCaption}
+                                onChange={e => setDraft(d => ({ ...d, tagCaption: e.target.value }))}
+                                onFocus={sel}
+                                list="gemstone-tag-caption-suggestions"
+                                style={{ fontSize: "0.82rem" }}
+                            />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.7rem" }}>Detail</label>
+                            <input className="form-input"
+                                placeholder="e.g. Burma Ruby, oval cut"
+                                value={draft.detail}
+                                onChange={e => setDraft(d => ({ ...d, detail: e.target.value }))}
+                                onFocus={sel}
+                                style={{ fontSize: "0.82rem" }}
+                            />
+                        </div>
+                    </div>
                 </div>
 
                 {/* Stone table */}
@@ -285,7 +324,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
                             <thead>
                                 <tr style={{ background: "var(--cream-light)", borderBottom: "2px solid var(--border)" }}>
-                                    {["S.No", "Type", "Pcs", "Weight", "Unit", "Basis", "Rate", "Amount", ""].map(h => (
+                                    {["S.No", "Type", "Tag Caption", "Detail", "Pcs", "Weight", "Unit", "Basis", "Rate", "Amount", ""].map(h => (
                                         <th key={h} style={{ padding: "6px 8px", textAlign: h === "Amount" || h === "Rate" ? "right" : "left", fontWeight: 700, fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
                                     ))}
                                 </tr>
@@ -302,6 +341,18 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                                                 {isEditing
                                                     ? <input className="form-input" value={r.type} onChange={e => updateRow(r.id, "type", e.target.value)} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
                                                     : <span style={{ cursor: "pointer" }} onClick={() => setEditingId(r.id)}>{r.type || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                                                }
+                                            </td>
+                                            <td style={{ padding: "4px 6px", minWidth: 90 }}>
+                                                {isEditing
+                                                    ? <input className="form-input" value={r.tagCaption} onChange={e => updateRow(r.id, "tagCaption", e.target.value)} onFocus={sel} list="gemstone-tag-caption-suggestions" style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
+                                                    : <span style={{ cursor: "pointer" }} onClick={() => setEditingId(r.id)}>{r.tagCaption || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
+                                                }
+                                            </td>
+                                            <td style={{ padding: "4px 6px", minWidth: 110 }}>
+                                                {isEditing
+                                                    ? <input className="form-input" value={r.detail} onChange={e => updateRow(r.id, "detail", e.target.value)} onFocus={sel} style={{ fontSize: "0.78rem", padding: "3px 6px", height: 28 }} />
+                                                    : <span style={{ cursor: "pointer" }} onClick={() => setEditingId(r.id)}>{r.detail || <span style={{ color: "var(--text-muted)" }}>—</span>}</span>
                                                 }
                                             </td>
                                             <td style={{ padding: "4px 6px", width: 52 }}>
@@ -331,7 +382,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                                             <td style={{ padding: "4px 6px", width: 90 }}>
                                                 {isEditing
                                                     ? <select className="form-select" value={r.rateBasis} onChange={e => updateRow(r.id, "rateBasis", e.target.value as RateBasis)} style={{ fontSize: "0.72rem", padding: "2px 4px", height: 28 }}>
-                                                        {(["Per Gram", "Per Carat", "Per Piece", "Lumpsum"] as RateBasis[]).map(b => <option key={b} value={b}>{b}</option>)}
+                                                        {(["Per Gram", "Per Carat", "Per Cent", "Per Piece", "Lumpsum"] as RateBasis[]).map(b => <option key={b} value={b}>{b}</option>)}
                                                       </select>
                                                     : <span style={{ cursor: "pointer", fontSize: "0.72rem", color: "var(--text-secondary)" }} onClick={() => setEditingId(r.id)}>{r.rateBasis}</span>
                                                 }
@@ -376,7 +427,10 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm }: GemstoneMo
                         <div>
                             <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Total Stones</div>
                             <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.95rem", color: "var(--text-secondary)" }}>
-                                {totalPieces} pcs · {totalWeightCt.toFixed(2)} ct / {totalWeightG.toFixed(3)} g
+                                {totalPieces} pcs · {[
+                                    gramRowsTotalG > 0 ? `${gramRowsTotalG.toFixed(3)} g` : null,
+                                    caratRowsTotalCt > 0 ? `${caratRowsTotalCt.toFixed(2)} ct` : null,
+                                ].filter(Boolean).join(" + ") || "0.000 g"}
                             </div>
                         </div>
                         <div>

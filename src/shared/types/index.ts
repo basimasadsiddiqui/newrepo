@@ -109,6 +109,7 @@ export interface InvoiceItem {
     categoryId: string | null;
     categoryName?: string;
     description: string | null;
+    tagCaption?: string | null;
     pieces: number;
     carat: number;
     size: string | null;
@@ -227,6 +228,7 @@ export interface InvoiceFormData {
 export interface ItemEntryFormData {
     categoryId: string;
     description: string;
+    tagCaption?: string;
     pieces: number;
     carat: number;
     size: string;

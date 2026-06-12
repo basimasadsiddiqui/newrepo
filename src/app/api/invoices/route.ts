@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
                 sortOrder: index,
                 categoryId: (item.categoryId as string) || null,
                 description: (item.description as string) || null,
+                tagCaption: (item.tagCaption as string) || null,
                 huid: (item.huid as string) || null,
                 pieces: (item.pieces as number) || 1,
                 carat: (item.carat as number) || 24,
@@ -175,7 +176,7 @@ export async function POST(req: NextRequest) {
         const serverSummary = calculateInvoiceSummary({
             items: serverComputedItems.map((i: any) => ({
                 totalAmount: i.totalAmount,
-                adjustedGoldWeight: i.adjustedGoldWeight,
+                estimatedGoldWeight: i.estimatedGoldWeight,
             })),
             otherCharges: otherCharges || 0,
             discount: discount || 0,

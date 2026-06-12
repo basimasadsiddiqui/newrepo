@@ -34,6 +34,16 @@ export function gramsToKachaTola(grams: number): number {
     return new Decimal(grams).div(KACHA_TOLA_GRAMS).toDecimalPlaces(4).toNumber();
 }
 
+/** Traditional Tola/Masha/Ratti breakdown (Pakka Tola = 12.150g, Masha = Tola/12, Ratti = Masha/8) */
+export function gramsToTolaMashaRatti(grams: number): { tola: number; masha: number; ratti: number } {
+    const totalTola = new Decimal(grams).div(PAKKA_TOLA_GRAMS);
+    const tola = totalTola.floor();
+    const totalMasha = totalTola.minus(tola).times(12);
+    const masha = totalMasha.floor();
+    const ratti = totalMasha.minus(masha).times(8).toDecimalPlaces(2);
+    return { tola: tola.toNumber(), masha: masha.toNumber(), ratti: ratti.toNumber() };
+}
+
 // ─── Karat ↔ Ratti Conversion ──────────────────────────────────
 
 export function karatToRatti(karat: number): number {
@@ -47,7 +57,7 @@ export function rattiToKarat(ratti: number): number {
 }
 
 /** Supported basis types for Labour calculation */
-export type LabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum" | "Fixed";
+export type LabourBasis = "Per Tola" | "Per Tola Pakka" | "Per Gram" | "Per Piece" | "Lump Sum" | "Fixed";
 
 /** Supported basis types for Kaat calculation */
 export type KaatBasis = "Ratti Kaat" | "Direct Weight" | "Pasa" | "Purity %";
@@ -139,7 +149,13 @@ export function calcLabourAmount(
         return result.toDecimalPlaces(4).toNumber();
     }
 
-    // Per Tola (default)
+    if (basis === "Per Tola Pakka") {
+        const tolas = new Decimal(adjustedGoldWeight).div(PAKKA_TOLA_GRAMS);
+        const result = tolas.times(rate);
+        return result.toDecimalPlaces(4).toNumber();
+    }
+
+    // Per Tola (default, Kacha Tola 11.664g)
     const tolas = new Decimal(adjustedGoldWeight).div(GRAMS_PER_TOLA);
     const result = tolas.times(rate);
     return result.toDecimalPlaces(4).toNumber();
@@ -266,9 +282,9 @@ export function calculateLineItem(params: {
             kaatWeight = params.kaatRate;
             adjustedGoldWeight = new Decimal(pureWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
         } else if (params.kaatBasis === "Purity %") {
-            // Wt × (purity% / 100)  e.g. 60 × (87.5/100) = 52.500
+            // Wt × purity (decimal)  e.g. 60 × 0.875 = 52.500
             adjustedGoldWeight = new Decimal(params.estimatedGoldWeight)
-                .times(new Decimal(params.kaatRate).div(100))
+                .times(new Decimal(params.kaatRate))
                 .toDecimalPlaces(4)
                 .toNumber();
             kaatWeight = new Decimal(params.estimatedGoldWeight).minus(adjustedGoldWeight).toDecimalPlaces(4).toNumber();
@@ -289,7 +305,8 @@ export function calculateLineItem(params: {
         params.diamondWeight
     );
 
-    const goldAmount = calcGoldAmount(adjustedGoldWeight, params.goldRatePerGram);
+    // Gold Amount = rate × the gold weight the user entered (not the kaat/purity-adjusted Pure Wt)
+    const goldAmount = calcGoldAmount(params.estimatedGoldWeight, params.goldRatePerGram);
 
     const polishAmount = calcPolishAmount(
         params.polishBasis,
@@ -324,7 +341,7 @@ export function calculateLineItem(params: {
 // ─── Invoice Summary Calculation ───────────────────────────────
 
 export function calculateInvoiceSummary(params: {
-    items: Array<{ totalAmount: number; adjustedGoldWeight: number }>;
+    items: Array<{ totalAmount: number; estimatedGoldWeight: number }>;
     otherCharges: number;
     discount: number;
     cashReceived: number;
@@ -340,8 +357,9 @@ export function calculateInvoiceSummary(params: {
     pasaDeduction: number;
     balance: number;
 } {
+    // Total Gold Weight = sum of the gold weight the user entered per item (not Pure Wt)
     const totalGoldWeight = params.items.reduce(
-        (sum, item) => new Decimal(sum).plus(item.adjustedGoldWeight).toNumber(),
+        (sum, item) => new Decimal(sum).plus(item.estimatedGoldWeight).toNumber(),
         0
     );
 

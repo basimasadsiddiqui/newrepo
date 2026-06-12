@@ -49,6 +49,7 @@ import {
   calculateLineItem,
   calculateInvoiceSummary,
   goldRateToPerGram,
+  goldRateToPerGramPakka,
   calcOldGoldValue,
   calcPasaDeduction,
 } from "@/lib/calculationEngine";
@@ -76,6 +77,7 @@ import type {
 const DEFAULT_ITEM_FORM: ItemEntryFormData = {
   categoryId: "",
   description: "",
+  tagCaption: "",
   pieces: 1,
   carat: 21,
   size: "",
@@ -399,7 +401,11 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   // DATA FETCHING
   // ═══════════════════════════════════════════════════════════════
 
-  const goldRatePerGram = useMemo(() => goldRateToPerGram(goldRate), [goldRate]);
+  // Purchase gold amounts use Pakka Tola (12.150g); Sale keeps Kacha Tola (11.664g)
+  const goldRatePerGram = useMemo(
+    () => transactionType === "PURCHASE" ? goldRateToPerGramPakka(goldRate) : goldRateToPerGram(goldRate),
+    [goldRate, transactionType]
+  );
 
   // Auto-generate receipt number for new invoices
   useEffect(() => {
@@ -664,7 +670,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     return calculateInvoiceSummary({
       items: items.map((item) => ({
         totalAmount: item.totalAmount,
-        adjustedGoldWeight: item.adjustedGoldWeight,
+        estimatedGoldWeight: item.estimatedGoldWeight,
       })),
       otherCharges,
       discount,
@@ -681,10 +687,10 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   // If user is currently editing an item, show pasa for that item's weight;
   // otherwise use the total gold weight from all added items.
   const visibleGoldWeight = useMemo(
-    () => currentItemCalc.adjustedGoldWeight > 0
-      ? currentItemCalc.adjustedGoldWeight
+    () => itemForm.estimatedGoldWeight > 0
+      ? itemForm.estimatedGoldWeight
       : invoiceSummary.totalGoldWeight,
-    [currentItemCalc.adjustedGoldWeight, invoiceSummary.totalGoldWeight]
+    [itemForm.estimatedGoldWeight, invoiceSummary.totalGoldWeight]
   );
 
   const pasaDeduction = useMemo(
@@ -695,7 +701,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const gridTotals = useMemo(() => {
     return items.reduce(
       (acc, item) => ({
-        goldWeight: acc.goldWeight + item.adjustedGoldWeight,
+        goldWeight: acc.goldWeight + item.estimatedGoldWeight,
         stoneWeight: acc.stoneWeight + item.stoneWeight,
         beadsWeight: acc.beadsWeight + item.beadsWeight,
         diamondWeight: acc.diamondWeight + item.diamondWeight,
@@ -894,6 +900,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         categoryId: effectiveCategoryId,
         categoryName: effectiveCategoryName,
         description: itemForm.description,
+        tagCaption: itemForm.tagCaption || null,
         pieces: itemForm.pieces,
         carat: itemForm.carat,
         size: itemForm.size,
@@ -962,6 +969,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     setItemForm({
       categoryId: item.categoryId || "",
       description: item.description || "",
+      tagCaption: item.tagCaption || "",
       pieces: item.pieces,
       carat: item.carat,
       size: item.size || "",
@@ -1272,6 +1280,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           categoryId: r.categoryId,
           categoryName: cat?.name || "",
           description: r.description,
+          tagCaption: r.tagCaption || null,
           pieces: r.pieces,
           carat: r.carat,
           size: "",
@@ -1494,8 +1503,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
               polishRate={polishRate}
               labourBasis={labourBasis}
               labourRate={labourRate}
-              estimatedGoldWeight={currentItemCalc.adjustedGoldWeight > 0 ? itemForm.estimatedGoldWeight : invoiceSummary.totalGoldWeight}
-              adjustedGoldWeight={currentItemCalc.adjustedGoldWeight > 0 ? currentItemCalc.adjustedGoldWeight : invoiceSummary.totalGoldWeight}
+              estimatedGoldWeight={itemForm.estimatedGoldWeight > 0 ? itemForm.estimatedGoldWeight : invoiceSummary.totalGoldWeight}
+              adjustedGoldWeight={itemForm.estimatedGoldWeight > 0 ? currentItemCalc.adjustedGoldWeight : invoiceSummary.totalGoldWeight}
               estimatedGrossWeight={currentItemCalc.estimatedGrossWeight}
               customerGoldWeight={partyGoldWeight}
               customerGoldCarat={partyGoldCarat}

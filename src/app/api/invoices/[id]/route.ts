@@ -163,6 +163,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                 sortOrder: index,
                 categoryId: (item.categoryId as string) || null,
                 description: (item.description as string) || null,
+                tagCaption: (item.tagCaption as string) || null,
                 pieces: Math.max(1, Math.round(toNumber(item.pieces, 1))),
                 carat: Math.round(toNumber(item.carat, 24)),
                 size: (item.size as string) || null,
@@ -190,7 +191,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
         const serverSummary = calculateInvoiceSummary({
             items: serverComputedItems.map((i) => ({
                 totalAmount: i.totalAmount,
-                adjustedGoldWeight: i.adjustedGoldWeight,
+                estimatedGoldWeight: i.estimatedGoldWeight,
             })),
             otherCharges: toNumber(otherCharges, 0),
             discount: toNumber(discount, 0),
@@ -275,6 +276,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                         sortOrder: item.sortOrder,
                         categoryId: item.categoryId,
                         description: item.description,
+                        tagCaption: item.tagCaption,
                         pieces: item.pieces,
                         carat: item.carat,
                         size: item.size,

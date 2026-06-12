@@ -19,14 +19,19 @@ import { Scale, Gem, ArrowDown, Percent } from "lucide-react";
 import { formatCurrency, formatWeight } from "@/lib/utils";
 
 import { type TransactionType } from "@/types";
-import { type LabourBasis, type KaatBasis, type PolishLabourBasis, calcPasaAdjustedWeight, goldRateToPerGram, goldRateToPerGramPakka } from "@/lib/calculationEngine";
+import { type LabourBasis, type KaatBasis, type PolishLabourBasis, calcPasaAdjustedWeight, calcLabourAmount, goldRateToPerGram, goldRateToPerGramPakka, gramsToTolaMashaRatti } from "@/lib/calculationEngine";
 
 const POLISH_BASIS_OPTIONS: PolishLabourBasis[] = ["Per Tola", "Pasa", "Ratti Cut"];
-const LABOUR_BASIS_OPTIONS: LabourBasis[] = ["Per Tola", "Per Gram", "Per Piece", "Lump Sum"];
+const LABOUR_BASIS_OPTIONS: { value: LabourBasis; label: string }[] = [
+    { value: "Per Tola", label: "Per Tola" },
+    { value: "Per Gram", label: "Per Gram" },
+    { value: "Per Piece", label: "Per Piece" },
+    { value: "Lump Sum", label: "Lump Sum" },
+];
 const KAAT_BASIS_OPTIONS: { value: KaatBasis; label: string }[] = [
     { value: "Ratti Kaat", label: "Ratti  —  Wt × (96−ratti) / 96" },
     { value: "Pasa",       label: "Pasa  —  No Kaat" },
-    { value: "Purity %",   label: "Purity %  —  Wt × (% / 100)" },
+    { value: "Purity %",   label: "Purity  —  Wt × purity" },
 ];
 
 interface JewelleryRulesPanelProps {
@@ -220,18 +225,18 @@ export default function JewelleryRulesPanel({
                             <div className="form-group">
                                 <label className="form-label">
                                     {kaatBasis === "Ratti Kaat" ? "Ratti Count"
-                                    : kaatBasis === "Purity %" ? "Purity % (e.g. 87.5)"
+                                    : kaatBasis === "Purity %" ? "Purity (e.g. .88)"
                                     : "— No input"}
                                 </label>
                                 <input
                                     className="form-input"
                                     type="number"
-                                    step={kaatBasis === "Purity %" ? 0.01 : 0.1}
-                                    max={kaatBasis === "Purity %" ? 100 : undefined}
+                                    step={kaatBasis === "Purity %" ? 0.001 : 0.1}
+                                    max={kaatBasis === "Purity %" ? 1 : undefined}
                                     value={kaatRate ?? ""}
                                     disabled={kaatBasis === "Pasa"}
                                     onChange={(e) => onKaatRateChange && onKaatRateChange(Number(e.target.value))}
-                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "e.g. 87.5" : "e.g. 2"}
+                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "e.g. .88" : "e.g. 2"}
                                     style={{ height: "32px", fontSize: "0.8125rem", opacity: kaatBasis === "Pasa" ? 0.4 : 1 }}
                                 />
                             </div>
@@ -260,7 +265,7 @@ export default function JewelleryRulesPanel({
                                 style={{ height: "32px", fontSize: "0.75rem" }}
                             >
                                 {LABOUR_BASIS_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>{opt}</option>
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                                 ))}
                             </select>
                         </div>
@@ -276,6 +281,32 @@ export default function JewelleryRulesPanel({
                             />
                         </div>
                     </div>
+
+                    {/* Per Tola labour — Pakka vs Kacha comparison */}
+                    {labourBasis === "Per Tola" && labourRate > 0 && estimatedGoldWeight > 0 && (
+                        <div style={{
+                            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
+                            padding: "7px 10px", marginBottom: "10px",
+                            background: "rgba(201,168,76,0.07)",
+                            border: "1px solid var(--gold-light)", borderRadius: 7,
+                        }}>
+                            <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                                Labour Rates
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Kacha Tola)</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.88rem", color: "var(--text-secondary)" }}>
+                                    Rs. {calcLabourAmount("Per Tola", estimatedGoldWeight, labourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Pakka Tola)</div>
+                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.88rem", color: "var(--maroon)" }}>
+                                    Rs. {calcLabourAmount("Per Tola Pakka", estimatedGoldWeight, labourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Pasa */}
                     {transactionType === "PURCHASE" && (
@@ -370,25 +401,36 @@ export default function JewelleryRulesPanel({
                             <span className="label">Est. Gross Wt</span>
                             <span className="value">{formatWeight(estimatedGrossWeight)} g</span>
                         </div>
-                        {/* Both Tola Gold Amounts */}
-                        {adjustedGoldWeight > 0 && goldRate > 0 && (
+                        {/* Both Tola Gold Amounts — based on entered Gold Wt, not Pure Wt */}
+                        {estimatedGoldWeight > 0 && goldRate > 0 && (
                             <div style={{ marginTop: 5, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
                                 <div style={{ background: "rgba(201,168,76,0.1)", borderRadius: 5, padding: "4px 6px" }}>
                                     <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Pakka Tola</div>
                                     <div style={{ fontSize: "0.58rem", color: "var(--text-muted)" }}>÷ 12.150 g</div>
                                     <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.8rem", color: "var(--maroon)" }}>
-                                        Rs. {formatCurrency(adjustedGoldWeight * goldRateToPerGramPakka(goldRate))}
+                                        Rs. {formatCurrency(estimatedGoldWeight * goldRateToPerGramPakka(goldRate))}
                                     </div>
                                 </div>
                                 <div style={{ background: "rgba(201,168,76,0.06)", borderRadius: 5, padding: "4px 6px" }}>
                                     <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Kacha Tola</div>
                                     <div style={{ fontSize: "0.58rem", color: "var(--text-muted)" }}>÷ 11.664 g</div>
                                     <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                                        Rs. {formatCurrency(adjustedGoldWeight * goldRateToPerGram(goldRate))}
+                                        Rs. {formatCurrency(estimatedGoldWeight * goldRateToPerGram(goldRate))}
                                     </div>
                                 </div>
                             </div>
                         )}
+                        {/* Tola / Masha / Ratti breakdown of Pure Wt */}
+                        {adjustedGoldWeight > 0 && (() => {
+                            const tmr = gramsToTolaMashaRatti(adjustedGoldWeight);
+                            return (
+                                <div style={{ marginTop: 4, background: "rgba(92,10,10,0.04)", borderRadius: 5, padding: "4px 6px", textAlign: "center" }}>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.75rem", color: "var(--maroon)" }}>
+                                        {tmr.tola} Tola {tmr.masha} Masha {tmr.ratti.toFixed(2)} Ratti
+                                    </span>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>

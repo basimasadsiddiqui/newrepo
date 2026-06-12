@@ -10,6 +10,17 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
+ * Format a number as Pakistani Rupee (PKR) with no decimal places.
+ * e.g. 123456.78 -> "123,457"
+ */
+export function formatCurrencyWhole(amount: number): string {
+    return new Intl.NumberFormat("en-PK", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount);
+}
+
+/**
  * Format a weight value (e.g. grams).
  * e.g. 12.3456 -> "12.346"
  */

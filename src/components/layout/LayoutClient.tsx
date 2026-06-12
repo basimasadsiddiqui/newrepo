@@ -40,6 +40,19 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Focusing a number field selects its current value so typing replaces it directly
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLInputElement;
+      if (target.tagName === "INPUT" && target.type === "number") {
+        target.select();
+      }
+    };
+
+    document.addEventListener("focusin", handleFocusIn);
+    return () => document.removeEventListener("focusin", handleFocusIn);
+  }, []);
+
   return (
     <>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
