@@ -3,6 +3,7 @@
 import { Plus, RotateCcw, Package, X, Gem } from "lucide-react";
 import type { Category, ItemEntryFormData, MetalTypeOption } from "@/types";
 import { type KaatBasis, type LabourBasis, calcLabourAmount, gramsToTolaMashaRatti, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
+import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
 import { useRef, useState, type ChangeEvent } from "react";
 import StockSelectionModal from "./StockSelectionModal";
 import GemstoneModal from "./GemstoneModal";
@@ -120,6 +121,18 @@ export default function ItemEntryForm({
 
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
+
+    // Item Detail autocomplete — product catalog suggestions for the typed name
+    const productSuggestions = useProductTagSuggestions(formData.description);
+    const itemDetailSuggestions = Array.from(new Set([...shortcuts, ...productSuggestions.map(p => p.name)]));
+
+    // Auto-load a unique tag caption once the item name is finalized
+    const handleDescriptionBlur = async () => {
+        const desc = formData.description.trim();
+        if (!desc || formData.tagCaption) return;
+        const tag = await assignProductTag(desc);
+        if (tag) onFormChange("tagCaption", tag);
+    };
 
     // Stone amount preview: if rate > 0, compute from rate×weight; else manual amount
     const effectiveStoneAmt = formData.stoneRate > 0 && formData.stoneWeight > 0
@@ -266,9 +279,10 @@ export default function ItemEntryForm({
                         <input className="form-input" list={listId}
                             placeholder="Describe the item…"
                             value={formData.description}
-                            onChange={e => onFormChange("description", e.target.value)} />
+                            onChange={e => onFormChange("description", e.target.value)}
+                            onBlur={handleDescriptionBlur} />
                         <datalist id={listId}>
-                            {shortcuts.map(s => <option key={s} value={s} />)}
+                            {itemDetailSuggestions.map(s => <option key={s} value={s} />)}
                         </datalist>
                     </div>
 

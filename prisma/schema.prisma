@@ -32,6 +32,8 @@ model Organization {
   products            Product[]
   stockMovements      StockMovement[]
   users               User[]
+  productCatalogs     ProductCatalog[]
+  tagSequences        TagSequence[]
 }
 
 model User {
@@ -240,6 +242,28 @@ model InvoiceItem {
 
   @@index([invoiceId])
   @@index([inventoryItemId])
+}
+
+model ProductCatalog {
+  id        String       @id @default(cuid())
+  orgId     String
+  name      String
+  prefix    String
+  createdAt DateTime     @default(now())
+  org       Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, name])
+  @@index([orgId, prefix])
+}
+
+model TagSequence {
+  id      String       @id @default(cuid())
+  orgId   String
+  prefix  String
+  lastSeq Int          @default(0)
+  org     Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, prefix])
 }
 
 model AuditLog {

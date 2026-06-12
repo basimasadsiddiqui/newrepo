@@ -9,6 +9,7 @@ import {
 import type { Category } from "@/types";
 import { calculateLineItem, goldRateToPerGram, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola, gramsToTolaMashaRatti } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
+import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
 
 export interface BulkRow {
     id: string;
@@ -118,6 +119,18 @@ export default function BulkEntryPanel({
 
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
+
+    // Description autocomplete — product catalog suggestions for the typed item name
+    const productSuggestions = useProductTagSuggestions(quickDesc);
+    const descSuggestions = Array.from(new Set(productSuggestions.map(p => p.name)));
+
+    // Auto-load a unique tag caption once the item name is finalized
+    const handleQuickDescBlur = async () => {
+        const desc = quickDesc.trim();
+        if (!desc || quickTagCaption) return;
+        const tag = await assignProductTag(desc);
+        if (tag) setQuickTagCaption(tag);
+    };
 
     // derived from stone rows
     const totalStoneWeightG  = stoneRows.reduce((sum, r) => sum + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
@@ -723,13 +736,17 @@ export default function BulkEntryPanel({
                         </div>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.8rem" }}>Description</label>
-                            <input className="form-input"
+                            <input className="form-input" list="bulk-quick-desc-list"
                                 placeholder="e.g. Bulk Gold Stock — Batch #12"
                                 value={quickDesc}
                                 onChange={e => setQuickDesc(e.target.value)}
                                 onFocus={sel}
+                                onBlur={handleQuickDescBlur}
                                 style={{ fontSize: "0.9rem" }}
                             />
+                            <datalist id="bulk-quick-desc-list">
+                                {descSuggestions.map(name => <option key={name} value={name} />)}
+                            </datalist>
                         </div>
                     </div>
 
