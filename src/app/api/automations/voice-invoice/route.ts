@@ -35,11 +35,16 @@ JSON format to return:
 
 Rules:
 - If party name not mentioned, use null for partyName
-- carat default is 22 if not mentioned
+- carat default is 22 if not mentioned. Accept "21k/22k/24k", "ikkis/baais" (21/22).
 - Extract all items mentioned (ring, necklace, bracelet, earrings, etc.)
-- Urdu words: "sona" = gold, "chandi" = silver, "angoothi/ring" = ring, "necklace/haar" = necklace, "bali/tops" = earrings, "kangan/bangle" = bangle, "weight/wazan" = weight, "rate" = rate, "karat" = carat
-- estimatedGoldWeight in grams (1 tola = 11.664 grams)
-- makingCharges in PKR total (not per gram unless specified)`;
+- Urdu words: "sona" = gold, "chandi" = silver, "angoothi/ring" = ring, "haar/necklace/set" = necklace, "bali/tops/jhumka" = earrings, "kangan/churi/bangle" = bangle, "payal" = anklet, "locket/pendant" = pendant, "nose pin/laung" = nose pin, "wazan/weight" = weight, "rate/bhao" = rate, "karat/kairat" = carat
+- WEIGHT: estimatedGoldWeight MUST be in grams. Convert if needed: 1 tola = 11.664 g, 1 masha = 0.972 g. e.g. "2 tola" -> 23.328; "saadhe 3 tola" (3.5) -> 40.824.
+- GOLD RATE: goldRate MUST be PKR per GRAM. If the user gives a rate "per tola", divide by 11.664. e.g. "rate 110000 per tola" -> 9430; "rate 9500" (already per gram) -> 9500.
+- makingCharges = labour/banwai, PKR total per item (not per gram unless the user says "per gram", then multiply by the item weight).
+
+Worked example —
+Input: "Bilal Ahmed ke liye 2 tola ki 22 karat gold bangles, 2 pieces, rate 116640 per tola, banwai 3000, 1000 advance liye"
+Output: {"partyName":"Bilal Ahmed","transactionType":"SALE","goldRate":10000,"items":[{"description":"gold bangles","pieces":2,"carat":22,"estimatedGoldWeight":23.328,"stoneWeight":null,"stoneRate":null,"makingCharges":3000}],"remarks":"","cashReceived":1000,"discount":null}`;
 
 // ── Parse transcript via AI ───────────────────────────────────────────────────
 
