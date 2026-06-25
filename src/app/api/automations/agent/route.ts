@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runAgent, executeConfirmedAction } from "@/lib/ai-agent";
-import { getToolsByName, READ_TOOLS, ALL_TOOLS } from "@/lib/agent-tools";
+import { getToolsByName, ALL_TOOLS } from "@/lib/agent-tools";
 import { QuotaError, quotaErrorResponse } from "@modules/ai-automation/application/quotaError";
 
 // ── Agent definitions — each has its own tool set and persona ─────────────────
@@ -53,8 +53,24 @@ export async function POST(req: NextRequest) {
             confirmAction?: { tool: string; input: Record<string, unknown> };
         };
 
-        // Confirmed write action
+        // Confirmed write action — re-validate server-side. The client is NOT trusted:
+        // only tools that genuinely exist AND are flagged requiresConfirmation may run here.
         if (confirmAction) {
+            const def = ALL_TOOLS.find((t) => t.name === confirmAction.tool);
+            if (!def || !def.requiresConfirmation) {
+                return NextResponse.json(
+                    { success: false, error: `Tool "${confirmAction.tool}" is not a confirmable action.` },
+                    { status: 403 }
+                );
+            }
+            // The tool must also be in the active agent's allowed set.
+            const allowed = AGENT_TOOLS[agentId] ?? AGENT_TOOLS.business;
+            if (!allowed.includes(confirmAction.tool)) {
+                return NextResponse.json(
+                    { success: false, error: `Tool "${confirmAction.tool}" is not available to this agent.` },
+                    { status: 403 }
+                );
+            }
             const result = await executeConfirmedAction(confirmAction.tool, confirmAction.input);
             return NextResponse.json({ success: true, response: `Done. ${confirmAction.tool.replace(/_/g, " ")} completed.`, toolCalls: [{ tool: confirmAction.tool, input: confirmAction.input, result, isWrite: true }] });
         }

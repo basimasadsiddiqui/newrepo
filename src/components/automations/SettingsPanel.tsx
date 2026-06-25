@@ -40,16 +40,18 @@ interface SettingsState {
     githubModels: GitHubModel[];
 }
 
+type AIMode = "online" | "offline" | "puter_llm";
+
 interface HealthState {
     internet: boolean;
     apiKeyConfigured: boolean;
-    mode: "online" | "offline";
+    mode: AIMode;
     activeProviderName: string | null;
     configuredProviders: string[];
 }
 
 interface Props {
-    onStatusChange?: (s: { internet: boolean; apiKeyConfigured: boolean; mode: "online" | "offline" }) => void;
+    onStatusChange?: (s: { internet: boolean; apiKeyConfigured: boolean; mode: AIMode }) => void;
 }
 
 const PROVIDER_ICONS: Record<string, string> = {
@@ -202,7 +204,8 @@ export default function SettingsPanel({ onStatusChange }: Props) {
     };
 
     const internetOk = browserOnline && (health?.internet ?? false);
-    const aiActive = health?.mode === "online";
+    // Puter.js runs the model in-browser, so it is "AI active" even though mode !== "online".
+    const aiActive = health?.mode === "online" || health?.mode === "puter_llm";
     const providerIds: ProviderId[] = settings?.providers
         ? (Object.keys(settings.providers) as ProviderId[])
         : ["anthropic", "openai", "deepseek", "google", "mistral", "github"];

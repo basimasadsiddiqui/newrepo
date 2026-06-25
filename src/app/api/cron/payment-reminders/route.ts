@@ -76,7 +76,7 @@ export async function GET(req: Request) {
 
         return NextResponse.json({
             success: true,
-            message: `Processed $activePayments.length} active payments. Sent $remindersSent.length} new reminders.`,
+            message: `Processed ${activePayments.length} active payments. Sent ${remindersSent.length} new reminders.`,
             remindersSent
         });
 

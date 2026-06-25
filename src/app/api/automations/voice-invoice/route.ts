@@ -131,10 +131,16 @@ async function createDraftInvoice(parsed: Awaited<ReturnType<typeof parseTranscr
                 })),
             },
         },
-        select: { id: true, orderNumber: true, partyName: true },
+        select: { id: true, orderNumber: true, partyName: true, transactionType: true },
     });
 
-    return { invoice, resolvedPartyName, goldRate };
+    // Open the actual invoice editor — root "/" for sales, "/purchase" for purchases.
+    // Both pages load an existing invoice via the ?id= query param (see InvoiceMain).
+    const editUrl = invoice.transactionType === "PURCHASE"
+        ? `/purchase?id=${invoice.id}`
+        : `/?id=${invoice.id}`;
+
+    return { invoice, resolvedPartyName, goldRate, editUrl };
 }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
@@ -155,8 +161,8 @@ export async function POST(req: NextRequest) {
         if (action === "create-direct") {
             const { parsedData } = await req.clone().json() as { transcript: string; parsedData: Awaited<ReturnType<typeof parseTranscript>> };
             if (!parsedData) return NextResponse.json({ success: false, error: "parsedData required" }, { status: 400 });
-            const { invoice, resolvedPartyName, goldRate } = await createDraftInvoice(parsedData);
-            return NextResponse.json({ success: true, invoiceId: invoice.id, orderNumber: invoice.orderNumber, partyName: resolvedPartyName, goldRate, itemCount: parsedData.items.length, editUrl: `/invoice?edit=${invoice.id}` });
+            const { invoice, resolvedPartyName, goldRate, editUrl } = await createDraftInvoice(parsedData);
+            return NextResponse.json({ success: true, invoiceId: invoice.id, orderNumber: invoice.orderNumber, partyName: resolvedPartyName, goldRate, itemCount: parsedData.items.length, editUrl });
         }
 
         // action === "parse" — check if Puter mode first
@@ -176,7 +182,7 @@ export async function POST(req: NextRequest) {
         }
 
         // action === "create"
-        const { invoice, resolvedPartyName, goldRate } = await createDraftInvoice(parsed);
+        const { invoice, resolvedPartyName, goldRate, editUrl } = await createDraftInvoice(parsed);
 
         return NextResponse.json({
             success: true,
@@ -185,7 +191,7 @@ export async function POST(req: NextRequest) {
             partyName: resolvedPartyName,
             goldRate,
             itemCount: parsed.items.length,
-            editUrl: `/invoice?edit=${invoice.id}`,
+            editUrl,
         });
     } catch (err) {
         if (err instanceof QuotaError) {
