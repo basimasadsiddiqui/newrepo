@@ -37,9 +37,9 @@ Currency: PKR. Tone: firm but respectful.${LOOP_GUARD}`,
 };
 
 const AGENT_TOOLS: Record<string, string[]> = {
-    business: ["search_party", "get_party_ledger", "get_invoices", "get_overdue_payments", "get_metal_rates", "get_sales_summary", "search_inventory", "get_customer_orders"],
-    sales: ["search_party", "get_party_ledger", "get_invoices", "search_inventory", "get_sales_summary", "get_customer_orders"],
-    collections: ["search_party", "get_party_ledger", "get_overdue_payments", "get_metal_rates", "update_metal_rate"],
+    business: ["search_party", "get_party_summary", "get_party_ledger", "get_invoices", "get_invoice_by_number", "get_overdue_payments", "get_metal_rates", "get_sales_summary", "get_business_overview", "search_inventory", "get_customer_orders"],
+    sales: ["search_party", "get_party_summary", "get_party_ledger", "get_invoices", "get_invoice_by_number", "search_inventory", "get_sales_summary", "get_business_overview", "get_customer_orders"],
+    collections: ["search_party", "get_party_summary", "get_party_ledger", "get_overdue_payments", "get_metal_rates", "update_metal_rate"],
 };
 
 // ── Run the agent ─────────────────────────────────────────────────────────────
@@ -120,10 +120,10 @@ export async function GET() {
                 icon: "🏪",
                 tools: AGENT_TOOLS.business.length,
                 examples: [
-                    "Ahmed Khan ka balance kya hai?",
-                    "Aaj ki sales batao",
+                    "Ahmed Khan ka pura hisaab dikhao",
+                    "Kaarobar aaj kaisa chal raha hai?",
                     "22 karat gold ring stock mein hai?",
-                    "Pending orders dikhao",
+                    "Invoice 142 ka detail batao",
                 ],
             },
             {
@@ -135,10 +135,10 @@ export async function GET() {
                 icon: "📄",
                 tools: AGENT_TOOLS.sales.length,
                 examples: [
-                    "Last 5 invoices for Ramesh Kumar",
-                    "Kon sa item sabse zyada bika is maheene?",
+                    "Ramesh ki position aur outstanding batao",
+                    "Bill #57 mein kya kya tha?",
                     "Gold necklace available hai?",
-                    "Ramesh ka pura hisab dikhao",
+                    "Last 5 invoices for Ramesh Kumar",
                 ],
             },
             {
@@ -151,9 +151,9 @@ export async function GET() {
                 tools: AGENT_TOOLS.collections.length,
                 examples: [
                     "Sabse zyada bakaya kiska hai?",
+                    "Ahmed ka pura hisaab aur outstanding",
                     "30 din se zyada overdue payments",
                     "Sona rate 9500 per gram kar do",
-                    "Ahmed aur Ramesh dono ka balance",
                 ],
             },
         ],

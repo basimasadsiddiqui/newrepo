@@ -89,19 +89,37 @@ function extractText(res: PuterChatResponse): string {
 
 // ── Intent detection — what data does this message need? ─────────────────────
 
+/** Pull an invoice/bill order number out of the message, if one is referenced. */
+function extractOrderNumber(msg: string): number | null {
+    const m = msg.match(/(?:invoice|bill|order|receipt)\s*#?\s*(\d+)/i) || msg.match(/#\s*(\d+)/);
+    return m ? Number(m[1]) : null;
+}
+
 function detectTools(msg: string): string[] {
     const m = msg.toLowerCase();
     const tools: string[] = [];
 
-    // Party intent — keyword-driven (NOT a hardcoded list of customer names, which
-    // only ever matched ~5 people and silently ignored everyone else).
-    if (/party|customer|supplier|balan|hisaab|hisab|khata|khaata|ledger|account|baqaya|bakaya|udhaar|udhar|len.?den/.test(m))
-        tools.push("search_party");
-    if (/ledger|transaction|history|hisaab|hisab|khata|khaata|payment history|pura hisaab/.test(m))
+    const hasInvoiceNumber = extractOrderNumber(msg) !== null;
+
+    // A specific invoice referenced by number → fetch just that invoice.
+    if (hasInvoiceNumber && /invoice|bill|order|receipt|#/.test(m))
+        tools.push("get_invoice_by_number");
+
+    // General "how's business" snapshot.
+    if (/overview|summary|business kais|kaisa chal|kaisi chal|how.?s business|snapshot|kaarobar|karobar|aaj ka din|din kaisa|dukan kais/.test(m))
+        tools.push("get_business_overview");
+
+    // Party intent — keyword-driven (NOT a hardcoded name list, which only ever
+    // matched ~5 people and silently ignored everyone else). get_party_summary
+    // returns balances + recent invoices + outstanding in one shot.
+    if (/party|customer|supplier|balan|hisaab|hisab|khata|khaata|ledger|account|baqaya|bakaya|udhaar|udhar|len.?den|position|owe/.test(m))
+        tools.push("get_party_summary");
+    if (/ledger|transaction|history|payment history|pura hisaab/.test(m))
         tools.push("get_party_ledger");
     if (/overdue|pending payment|baqaya|bakaya|due|unpaid|outstanding/.test(m))
         tools.push("get_overdue_payments");
-    if (/invoice|bill|sale|purchase|order list/.test(m))
+    // Invoice *list* — only when not already asking for one specific invoice.
+    if (!hasInvoiceNumber && /invoice|bill|sale|purchase|order list/.test(m))
         tools.push("get_invoices");
     if (/stock|inventory|item|product|available|maal|cheez/.test(m))
         tools.push("search_inventory");
@@ -109,10 +127,13 @@ function detectTools(msg: string): string[] {
         tools.push("get_metal_rates");
     if (/sales|today sale|aaj ki|farokht|revenue|total/.test(m))
         tools.push("get_sales_summary");
-    if (/order|custom order|karigar|pending order/.test(m))
+    if (/custom order|karigar|pending order/.test(m))
         tools.push("get_customer_orders");
 
-    return tools.length > 0 ? tools : ["get_metal_rates", "get_overdue_payments"];
+    // De-dup while preserving order.
+    const unique = [...new Set(tools)];
+    // Default to a business snapshot — the most generally useful answer.
+    return unique.length > 0 ? unique : ["get_business_overview"];
 }
 
 /** Extract likely party name from Urdu/English message */
@@ -180,6 +201,7 @@ export function usePuterAgent(model = "gpt-5-nano") {
             const toolCalls: PuterAgentResult["toolCalls"] = [];
             const neededTools = detectTools(message);
             const partyName = extractPartyName(message);
+            const orderNum = extractOrderNumber(message);
 
             // ── Step 1: Fetch relevant data ───────────────────────────────────
             const dataContext: string[] = [];
@@ -188,22 +210,24 @@ export function usePuterAgent(model = "gpt-5-nano") {
                 let input: Record<string, unknown> = {};
                 let result: unknown;
 
-                if (tool === "search_party") {
+                if (tool === "get_party_summary") {
                     if (!partyName) continue;
                     input = { name: partyName };
                     result = await fetchTool(tool, input);
                     toolCalls.push({ tool, input, result, isWrite: false });
 
-                    const parties = Array.isArray(result) ? result : [];
-                    if (parties.length > 0) {
-                        dataContext.push(`PARTY DATA for "${partyName}":\n${formatResult(result)}`);
+                    const summary = (result && typeof result === "object")
+                        ? result as { found?: boolean; party?: { id?: string; name?: string } }
+                        : null;
+                    if (summary?.found) {
+                        dataContext.push(`PARTY SUMMARY for "${partyName}":\n${formatResult(result)}`);
 
-                        // Auto-fetch ledger if user asked for history
-                        if (neededTools.includes("get_party_ledger") && parties[0]?.id) {
-                            const ledgerInput = { partyId: parties[0].id, limit: 15 };
+                        // Auto-fetch full ledger if the user asked for history
+                        if (neededTools.includes("get_party_ledger") && summary.party?.id) {
+                            const ledgerInput = { partyId: summary.party.id, limit: 15 };
                             const ledger = await fetchTool("get_party_ledger", ledgerInput);
                             toolCalls.push({ tool: "get_party_ledger", input: ledgerInput, result: ledger, isWrite: false });
-                            dataContext.push(`LEDGER for ${parties[0].name}:\n${formatResult(ledger)}`);
+                            dataContext.push(`LEDGER for ${summary.party.name ?? partyName}:\n${formatResult(ledger)}`);
                         }
                     } else {
                         dataContext.push(`No party found matching "${partyName}".`);
@@ -211,7 +235,23 @@ export function usePuterAgent(model = "gpt-5-nano") {
                     continue;
                 }
 
-                if (tool === "get_party_ledger") continue; // handled above with search_party
+                if (tool === "get_party_ledger") continue; // handled above with get_party_summary
+
+                if (tool === "get_business_overview") {
+                    result = await fetchTool(tool, {});
+                    toolCalls.push({ tool, input: {}, result, isWrite: false });
+                    dataContext.push(`BUSINESS OVERVIEW:\n${formatResult(result)}`);
+                    continue;
+                }
+
+                if (tool === "get_invoice_by_number") {
+                    if (orderNum == null) continue;
+                    input = { orderNumber: orderNum };
+                    result = await fetchTool(tool, input);
+                    toolCalls.push({ tool, input, result, isWrite: false });
+                    dataContext.push(`INVOICE #${orderNum}:\n${formatResult(result)}`);
+                    continue;
+                }
 
                 if (tool === "get_sales_summary") {
                     input = { period: "today" };

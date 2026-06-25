@@ -228,6 +228,103 @@ export const ALL_TOOLS: AgentTool[] = [
         },
     },
 
+    {
+        name: "get_business_overview",
+        description: "Get a one-shot snapshot of the business RIGHT NOW: today's & this month's sales, total receivable (owed to us) and payable (we owe), pending customer orders, available + low-stock item counts, and current metal rates. Use this for general questions like 'how is business', 'aaj ka din kaisa raha', 'kaarobar kaisa chal raha hai'.",
+        parameters: { type: "object", properties: {} },
+        execute: async () => {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            const openStatuses = ["OVERDUE", "PENDING", "PARTIAL"] as const;
+            const [todaySales, monthSales, receivable, payable, pendingOrders, availableItems, lowStock, metalRates] = await Promise.all([
+                prisma.invoice.aggregate({ where: { orgId: ORG_ID, transactionType: "SALE", status: "FINALIZED", date: { gte: today } }, _sum: { totalAmount: true }, _count: true }),
+                prisma.invoice.aggregate({ where: { orgId: ORG_ID, transactionType: "SALE", status: "FINALIZED", date: { gte: monthStart } }, _sum: { totalAmount: true }, _count: true }),
+                prisma.payment.aggregate({ where: { orgId: ORG_ID, category: "RECEIVABLE", status: { in: [...openStatuses] }, remainingAmount: { gt: 0 } }, _sum: { remainingAmount: true } }),
+                prisma.payment.aggregate({ where: { orgId: ORG_ID, category: "PAYABLE", status: { in: [...openStatuses] }, remainingAmount: { gt: 0 } }, _sum: { remainingAmount: true } }),
+                prisma.customerOrder.count({ where: { orgId: ORG_ID, status: "PENDING" } }),
+                prisma.inventoryItem.count({ where: { orgId: ORG_ID, status: "AVAILABLE", deletedAt: null } }),
+                prisma.inventoryItem.count({ where: { orgId: ORG_ID, status: "AVAILABLE", quantity: { lte: 2 }, deletedAt: null } }),
+                prisma.metalRate.findMany({ where: { orgId: ORG_ID }, select: { metal: true, ratePerGram: true } }),
+            ]);
+            return {
+                todaySales: { count: todaySales._count, total: Number(todaySales._sum.totalAmount ?? 0) },
+                monthSales: { count: monthSales._count, total: Number(monthSales._sum.totalAmount ?? 0) },
+                totalReceivable: Number(receivable._sum.remainingAmount ?? 0),
+                totalPayable: Number(payable._sum.remainingAmount ?? 0),
+                pendingOrders,
+                inventory: { available: availableItems, lowStock },
+                metalRates: metalRates.map((r) => ({ metal: r.metal, ratePerGram: Number(r.ratePerGram) })),
+            };
+        },
+    },
+
+    {
+        name: "get_party_summary",
+        description: "Get the COMPLETE picture for one customer/supplier in a single call: cash balance, gold balance, their last 5 invoices, and total outstanding amount. Prefer this over search_party when the user wants a party's overall standing ('Ahmed ka pura hisaab', 'Ramesh ki position', 'how much does X owe').",
+        parameters: {
+            type: "object",
+            properties: { name: { type: "string", description: "Full or partial party name" } },
+            required: ["name"],
+        },
+        execute: async ({ name }) => {
+            const party = await prisma.party.findFirst({
+                where: { orgId: ORG_ID, name: { contains: String(name), mode: "insensitive" } },
+                select: { id: true, name: true, type: true, mobile: true, balance: true, goldBalance: true },
+            });
+            if (!party) return { found: false, message: `No party matching "${name}".` };
+            const [recentInvoices, outstanding] = await Promise.all([
+                prisma.invoice.findMany({
+                    where: { orgId: ORG_ID, partyId: party.id },
+                    orderBy: { date: "desc" }, take: 5,
+                    select: { orderNumber: true, date: true, transactionType: true, status: true, totalAmount: true, balance: true },
+                }),
+                prisma.payment.aggregate({
+                    where: { orgId: ORG_ID, partyId: party.id, remainingAmount: { gt: 0 } },
+                    _sum: { remainingAmount: true }, _count: true,
+                }),
+            ]);
+            return {
+                found: true,
+                party: { id: party.id, name: party.name, type: party.type, mobile: party.mobile, balance: Number(party.balance), goldBalance: Number(party.goldBalance) },
+                recentInvoices: recentInvoices.map((i) => ({ orderNumber: i.orderNumber, date: i.date, type: i.transactionType, status: i.status, totalAmount: Number(i.totalAmount), balance: Number(i.balance) })),
+                outstanding: { count: outstanding._count, total: Number(outstanding._sum.remainingAmount ?? 0) },
+            };
+        },
+    },
+
+    {
+        name: "get_invoice_by_number",
+        description: "Look up ONE specific invoice by its order number (the # shown on bills). Returns its party, status, totals, gold weight, and line items. Use when the user references a specific invoice/bill number, e.g. 'invoice 142 dikhao', 'bill #57 ka detail'.",
+        parameters: {
+            type: "object",
+            properties: { orderNumber: { type: "number", description: "The invoice order number" } },
+            required: ["orderNumber"],
+        },
+        execute: async ({ orderNumber }) => {
+            const inv = await prisma.invoice.findFirst({
+                where: { orgId: ORG_ID, orderNumber: Number(orderNumber) },
+                include: {
+                    items: { orderBy: { sortOrder: "asc" }, select: { description: true, pieces: true, carat: true, estimatedGoldWeight: true, totalAmount: true } },
+                    party: { select: { name: true, mobile: true } },
+                },
+            });
+            if (!inv) return { found: false, message: `No invoice #${orderNumber}.` };
+            return {
+                found: true,
+                orderNumber: inv.orderNumber,
+                date: inv.date,
+                status: inv.status,
+                transactionType: inv.transactionType,
+                partyName: inv.partyName ?? inv.party?.name ?? null,
+                partyMobile: inv.party?.mobile ?? null,
+                totalAmount: Number(inv.totalAmount),
+                balance: Number(inv.balance),
+                totalGoldWeight: Number(inv.totalGoldWeight),
+                items: inv.items.map((it) => ({ description: it.description, pieces: it.pieces, carat: it.carat, goldWeight: Number(it.estimatedGoldWeight), totalAmount: Number(it.totalAmount) })),
+            };
+        },
+    },
+
     // ── Write tools (require confirmation) ─────────────────────────────────────
 
     {
