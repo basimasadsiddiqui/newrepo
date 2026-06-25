@@ -105,31 +105,93 @@ async function createDraftInvoice(parsed: Awaited<ReturnType<typeof parseTranscr
         select: { id: true },
     });
 
+    const transactionType = (parsed.transactionType ?? "SALE") as "SALE" | "PURCHASE";
+
+    // Compute line amounts server-side with the shared calculation engine so the
+    // draft has real totals (previously totals were 0 — and the invalid
+    // `makingCharges` field crashed the InvoiceItem create entirely).
+    const { calculateLineItem, calculateInvoiceSummary } = await import(
+        "@modules/invoice/application/calculationEngine"
+    );
+
+    // The voice prompt extracts goldRate as PKR *per gram* already — do NOT run it
+    // through goldRateToPerGram (which would wrongly divide by the tola weight).
+    const goldRatePerGram = goldRate ?? 0;
+
+    const computedItems = parsed.items.map((item, i) => {
+        const estimatedGoldWeight = item.estimatedGoldWeight ?? 0;
+        const carat = item.carat ?? 22;
+        const stoneWeight = item.stoneWeight ?? 0;
+        const stoneRate = item.stoneRate ?? 0;
+        const stoneAmount = stoneRate > 0 && stoneWeight > 0 ? stoneRate * stoneWeight : 0;
+        // Spoken "making charges" are a per-item lump sum → InvoiceItem.labourAmount.
+        const makingCharges = item.makingCharges ?? 0;
+
+        const calc = calculateLineItem({
+            transactionType,
+            estimatedGoldWeight,
+            carat,
+            goldRatePerGram,
+            polishRate: 0,
+            polishBasis: "Per Tola",
+            labourRate: makingCharges,
+            labourBasis: "Lump Sum",
+            pieces: item.pieces ?? 1,
+            stoneWeight,
+            beadsWeight: 0,
+            diamondWeight: 0,
+            stoneAmount,
+            beadsAmount: 0,
+            diamondAmount: 0,
+        });
+
+        return {
+            sortOrder: i + 1,
+            categoryId: defaultCategory?.id ?? null,
+            description: item.description,
+            pieces: item.pieces ?? 1,
+            carat,
+            estimatedGoldWeight,
+            adjustedGoldWeight: calc.adjustedGoldWeight,
+            estimatedGrossWeight: calc.estimatedGrossWeight,
+            stoneWeight,
+            stoneRate: stoneRate || null,
+            goldAmount: calc.goldAmount,
+            stoneAmount,
+            polishAmount: calc.polishAmount,
+            labourAmount: calc.labourAmount,
+            totalAmount: calc.totalAmount,
+        };
+    });
+
+    const summary = calculateInvoiceSummary({
+        items: computedItems.map((c) => ({ totalAmount: c.totalAmount, estimatedGoldWeight: c.estimatedGoldWeight })),
+        otherCharges: 0,
+        discount: parsed.discount ?? 0,
+        cashReceived: parsed.cashReceived ?? 0,
+        goldReceived: 0,
+        customerGoldWeight: 0,
+        customerGoldCarat: 24,
+        goldRatePerGram,
+        pasaPercent: 0,
+    });
+
     const invoice = await prisma.invoice.create({
         data: {
             orgId: ORG_ID,
             partyId: partyId ?? undefined,
             partyName: resolvedPartyName,
-            transactionType: (parsed.transactionType ?? "SALE") as "SALE" | "PURCHASE",
+            transactionType,
             status: "DRAFT",
             date: new Date(),
             goldRate: goldRate ?? undefined,
             remarks: parsed.remarks ?? "",
             cashReceived: parsed.cashReceived ?? 0,
             discount: parsed.discount ?? 0,
-            items: {
-                create: parsed.items.map((item, i) => ({
-                    sortOrder: i + 1,
-                    categoryId: defaultCategory?.id,
-                    description: item.description,
-                    pieces: item.pieces ?? 1,
-                    carat: item.carat ?? 22,
-                    estimatedGoldWeight: item.estimatedGoldWeight ?? 0,
-                    stoneWeight: item.stoneWeight ?? 0,
-                    stoneRate: item.stoneRate ?? 0,
-                    makingCharges: item.makingCharges ?? 0,
-                })),
-            },
+            totalGoldWeight: summary.totalGoldWeight,
+            totalAmount: summary.totalAmount,
+            balance: summary.balance,
+            items: { create: computedItems },
         },
         select: { id: true, orderNumber: true, partyName: true, transactionType: true },
     });

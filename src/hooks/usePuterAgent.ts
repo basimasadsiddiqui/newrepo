@@ -93,11 +93,13 @@ function detectTools(msg: string): string[] {
     const m = msg.toLowerCase();
     const tools: string[] = [];
 
-    if (/ramesh|ahmed|khan|kumar|ali|party|customer|supplier|balan|hisaab|khata|ledger|account/.test(m))
+    // Party intent — keyword-driven (NOT a hardcoded list of customer names, which
+    // only ever matched ~5 people and silently ignored everyone else).
+    if (/party|customer|supplier|balan|hisaab|hisab|khata|khaata|ledger|account|baqaya|bakaya|udhaar|udhar|len.?den/.test(m))
         tools.push("search_party");
-    if (/ledger|transaction|history|hisaab|khata|payment history|pura hisaab/.test(m))
+    if (/ledger|transaction|history|hisaab|hisab|khata|khaata|payment history|pura hisaab/.test(m))
         tools.push("get_party_ledger");
-    if (/overdue|pending payment|baqaya|due|unpaid|outstanding/.test(m))
+    if (/overdue|pending payment|baqaya|bakaya|due|unpaid|outstanding/.test(m))
         tools.push("get_overdue_payments");
     if (/invoice|bill|sale|purchase|order list/.test(m))
         tools.push("get_invoices");
@@ -115,8 +117,17 @@ function detectTools(msg: string): string[] {
 
 /** Extract likely party name from Urdu/English message */
 function extractPartyName(msg: string): string | null {
+    // Word-boundary anchored so we strip whole stop-words only — the previous
+    // un-anchored regex corrupted real names (e.g. "Karim" -> "rim", "Mehmood" -> "hmood").
+    const STOP = [
+        "ka", "ki", "ke", "kuch", "kahan", "hai", "hain", "dikhao", "batao", "check",
+        "karo", "pura", "puro", "hisaab", "hisab", "khata", "khaata", "balance", "ledger",
+        "account", "show", "me", "the", "of", "for", "party", "customer", "supplier",
+        "search", "find", "ek", "aik", "yeh", "woh", "unka", "uska", "dono", "ka", "kya",
+        "baqaya", "bakaya", "udhaar", "udhar",
+    ];
     const cleaned = msg
-        .replace(/(ka|ki|ke|kuch|kahan|hai|hain|dikhao|batao|check|karo|pura|hisaab|balance|ledger|account|show|me|the|of|for|party|customer|supplier|search|find|ek|aik|yeh|woh|unka|uska|dono)/gi, " ")
+        .replace(new RegExp(`\\b(${STOP.join("|")})\\b`, "gi"), " ")
         .replace(/\s+/g, " ")
         .trim();
     const words = cleaned.split(" ").filter((w) => w.length > 2 && !/^\d+$/.test(w));

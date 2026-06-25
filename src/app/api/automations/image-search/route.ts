@@ -72,6 +72,18 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
+        // Vision is only available if the active provider supports it, or an
+        // Anthropic env key exists for the fallback. Otherwise return "offline"
+        // so the client shows the filter form instead of throwing a 500.
+        const visionAvailable = active.provider.supportsVision || !!process.env.ANTHROPIC_API_KEY?.trim();
+        if (!visionAvailable) {
+            return NextResponse.json({
+                success: false,
+                error: "offline",
+                message: `${active.provider.name} can't analyse images. Use the filters below, or switch to a vision-capable model.`,
+            }, { status: 400 });
+        }
+
         const visionPrompt = `Analyze this jewelry image and respond with JSON only. No explanation, just valid JSON:
 {
   "type": "ring|necklace|bracelet|earring|pendant|chain|bangle|set|tikka|jhumka|other",
