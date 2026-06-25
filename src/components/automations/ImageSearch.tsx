@@ -66,7 +66,7 @@ export default function ImageSearch({ isOnline, puterModel }: Props) {
             if (puterModel) {
                 // Use Puter's image API — passes the data URI directly as the image argument
                 const visionPrompt = `Analyze this jewelry image and respond with JSON only. No explanation, just valid JSON:
-{"type":"ring|necklace|bracelet|earring|pendant|chain|bangle|set|tikka|jhumka|other","metal":"gold|silver|other","metalColor":"yellow|white|rose|plain","hasStones":true,"stoneTypes":["diamond","ruby","emerald","pearl","other"],"style":"bridal|casual|traditional|modern","keywords":["up to 4 short search keywords"]}`;
+{"type":"ring|necklace|bracelet|earring|pendant|chain|bangle|set|tikka|jhumka|other","metal":"gold|silver|other","metalColor":"yellow|white|rose|plain","hasStones":true|false,"stoneTypes":["diamond","ruby","emerald","pearl","other"],"style":"bridal|casual|traditional|modern","keywords":["up to 4 short search keywords"]}`;
                 const rawJson = await puterImageAnalysis(imagePreview, visionPrompt, puterModel);
                 let attrs: Record<string, unknown> = {};
                 try { const m = rawJson.match(/\{[\s\S]*\}/); if (m) attrs = JSON.parse(m[0]); } catch { /* ignore */ }
