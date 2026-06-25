@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getActiveProviderKey, getAllProviderStatus, PROVIDERS } from "@/lib/ai-key-manager";
 
-async function checkInternet(): Promise<boolean> {
+// Short-lived cache so the page + Settings panel (each polling every 30s, plus
+// any manual rechecks) don't each fire outbound HEAD requests at AI vendors.
+// Without this, an open Settings tab probes Anthropic/OpenAI ~4×/min.
+let internetCache: { value: boolean; at: number } | null = null;
+const INTERNET_TTL_MS = 20_000;
+
+async function probeInternet(): Promise<boolean> {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
@@ -20,6 +26,16 @@ async function checkInternet(): Promise<boolean> {
             return false;
         }
     }
+}
+
+async function checkInternet(): Promise<boolean> {
+    const now = Date.now();
+    if (internetCache && now - internetCache.at < INTERNET_TTL_MS) {
+        return internetCache.value;
+    }
+    const value = await probeInternet();
+    internetCache = { value, at: now };
+    return value;
 }
 
 export async function GET() {
