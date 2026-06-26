@@ -143,6 +143,7 @@ export interface InvoiceItem {
 
     inventoryItemId?: string | null;
     metalTypeId?: string | null;
+    metalName?: string | null;
 }
 
 // ─── Invoice (Header + Summary) ───────────────────────────────
@@ -246,6 +247,7 @@ export interface ItemEntryFormData {
     diamondEntries?: DiamondEntry[];
     inventoryItemId?: string;
     metalTypeId?: string | null;
+    metalName?: string | null;
     imageUrl?: string | null;
 }
 

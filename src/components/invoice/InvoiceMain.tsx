@@ -93,6 +93,7 @@ const DEFAULT_ITEM_FORM: ItemEntryFormData = {
   diamondAmount: 0,
   imageUrl: null,
   metalTypeId: null,
+  metalName: "Gold",
 };
 
 // Purchase mode: keep category/description/carat/pieces/metal — only clear weight & stones
@@ -161,6 +162,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   // ── API Data ──
   const [categories, setCategories] = useState<Category[]>([]);
   const [metalTypes, setMetalTypes] = useState<MetalTypeOption[]>([]);
+  const [metals, setMetals] = useState<string[]>([]);
   const [, setIsLoading] = useState<boolean>(false);
   const [invoiceId, setInvoiceId] = useState<string | null>(null); // Null = New Invoice
 
@@ -424,11 +426,17 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   useEffect(() => {
     const fetchInitData = async () => {
       try {
-        const [catRes, rateRes, metalTypesRes] = await Promise.all([
+        const [catRes, rateRes, metalTypesRes, metalsRes] = await Promise.all([
           fetch("/api/categories"),
           fetch("/api/metal-rates"),
           fetch("/api/metal-types"),
+          fetch("/api/metals"),
         ]);
+
+        if (metalsRes.ok) {
+          const metalsData = await metalsRes.json() as { metals?: string[] };
+          if (Array.isArray(metalsData.metals)) setMetals(metalsData.metals);
+        }
 
         if (catRes.ok) {
           const catData = await catRes.json();
@@ -925,6 +933,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         imageUrl: itemForm.imageUrl || null,
         inventoryItemId: itemForm.inventoryItemId || null,
         metalTypeId: itemForm.metalTypeId || null,
+        metalName: itemForm.metalName || null,
       };
 
       if (editingItemIndex !== null) {
@@ -953,6 +962,29 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     setEditingItemIndex(null);
     setDiamondEntries([]);
     setShouldAutoAdd(false);
+  }, []);
+
+  // ── Manage the base-metal list (Gold/Silver/…) ──
+  const handleAddMetal = useCallback(async (name: string) => {
+    try {
+      const res = await fetch("/api/metals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.metals)) setMetals(data.metals);
+      else toast.error(data.error ?? "Could not add metal");
+    } catch { toast.error("Could not add metal"); }
+  }, []);
+
+  const handleRemoveMetal = useCallback(async (name: string) => {
+    try {
+      const res = await fetch(`/api/metals?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.metals)) setMetals(data.metals);
+      else toast.error(data.error ?? "Could not remove metal");
+    } catch { toast.error("Could not remove metal"); }
   }, []);
 
   // ── Auto-Add Trigger (for Diamond Dialog) ──
@@ -986,6 +1018,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       imageUrl: item.imageUrl || null,
       inventoryItemId: item.inventoryItemId || undefined,
       metalTypeId: item.metalTypeId || null,
+      metalName: item.metalName || "Gold",
     });
     // Restore diamond entries if present
     setDiamondEntries(item.diamondEntries || []);
@@ -1095,6 +1128,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         inventoryItemId: item.inventoryItemId || null,
         imageUrl: item.imageUrl || null,
         metalTypeId: item.metalTypeId || null,
+        metalName: item.metalName || null,
       })),
       photos, // Include photos
     };
@@ -1467,6 +1501,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         <ItemEntryForm
           categories={categories}
           metalTypes={metalTypes}
+          metals={metals}
+          onAddMetal={handleAddMetal}
+          onRemoveMetal={handleRemoveMetal}
           goldRate={goldRate}
           formData={itemForm}
           isEditing={editingItemIndex !== null}
@@ -1493,6 +1530,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           <ItemEntryForm
             categories={categories}
             metalTypes={metalTypes}
+            metals={metals}
+            onAddMetal={handleAddMetal}
+            onRemoveMetal={handleRemoveMetal}
             goldRate={goldRate}
             formData={itemForm}
             isEditing={editingItemIndex !== null}

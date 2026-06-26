@@ -36,6 +36,9 @@ function getShortcuts(categories: Category[], categoryId: string, customName: st
 interface ItemEntryFormProps {
     categories: Category[];
     metalTypes: MetalTypeOption[];
+    metals?: string[];
+    onAddMetal?: (name: string) => void;
+    onRemoveMetal?: (name: string) => void;
     goldRate: number;
     formData: ItemEntryFormData;
     isEditing: boolean;
@@ -74,6 +77,9 @@ interface StockSelectionItem {
 export default function ItemEntryForm({
     categories,
     metalTypes,
+    metals = [],
+    onAddMetal,
+    onRemoveMetal,
     goldRate,
     formData,
     isEditing,
@@ -118,6 +124,9 @@ export default function ItemEntryForm({
     const hasDiamondCategory = categories.some(c => c.name.toLowerCase().includes("diamond"));
     const shortcuts = getShortcuts(categories, formData.categoryId, customCategoryName);
     const listId = "item-desc-list";
+
+    // Base metal name (Gold/Silver/…); carat is entered separately. Defaults to Gold.
+    const selectedMetal = formData.metalName || metals[0] || "Gold";
 
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
@@ -220,23 +229,49 @@ export default function ItemEntryForm({
                 {/* ── Row 1: Metal, Tag Caption, Category, Item Detail, Rate, Carat, Pieces, Size ── */}
                 <div style={{
                     display: "grid",
-                    gridTemplateColumns: "0.9fr 0.8fr 1.2fr 1.7fr 0.9fr 0.6fr 0.5fr 0.5fr",
+                    gridTemplateColumns: "1.15fr 0.8fr 1.1fr 1.55fr 0.9fr 0.6fr 0.5fr 0.5fr",
                     gap: "6px",
                     marginBottom: "6px",
                 }}>
-                    {/* Metal Type */}
+                    {/* Metal — base metal name (carat handled separately in the Carat field) */}
                     <div className="form-group">
                         <label className="form-label">Metal</label>
-                        <select className="form-select"
-                            value={formData.metalTypeId || ""}
-                            onChange={e => onFormChange("metalTypeId", e.target.value || null)}
-                            disabled={isDiamondCategory}
-                            style={isDiamondCategory ? { opacity: 0.5 } : {}}>
-                            <option value="">Auto</option>
-                            {metalTypes.map(mt => (
-                                <option key={mt.id} value={mt.id}>{mt.name} ({mt.purity})</option>
-                            ))}
-                        </select>
+                        <div style={{ display: "flex", gap: 4 }}>
+                            <select className="form-select"
+                                value={selectedMetal}
+                                onChange={e => {
+                                    const v = e.target.value;
+                                    if (v === "__add__") {
+                                        const name = window.prompt("New metal name (e.g. Palladium)")?.trim();
+                                        if (name) { onAddMetal?.(name); onFormChange("metalName", name); }
+                                        return;
+                                    }
+                                    onFormChange("metalName", v);
+                                }}
+                                disabled={isDiamondCategory}
+                                style={{ flex: 1, ...(isDiamondCategory ? { opacity: 0.5 } : {}) }}>
+                                {metals.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                                {!metals.some(m => m.toLowerCase() === selectedMetal.toLowerCase()) && (
+                                    <option value={selectedMetal}>{selectedMetal}</option>
+                                )}
+                                <option value="__add__">+ Add metal…</option>
+                            </select>
+                            <button type="button" className="btn btn-ghost btn-icon"
+                                title={`Remove "${selectedMetal}" from the metal list`}
+                                disabled={isDiamondCategory || metals.length <= 1}
+                                onClick={() => {
+                                    if (window.confirm(`Remove "${selectedMetal}" from the metal list?`)) {
+                                        onRemoveMetal?.(selectedMetal);
+                                        const next = metals.find(m => m.toLowerCase() !== selectedMetal.toLowerCase());
+                                        onFormChange("metalName", next ?? "");
+                                    }
+                                }}
+                                style={{ width: 30, height: 34, minWidth: 30, padding: 0 }}>
+                                <X size={12} />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Tag Caption — printed on item tag / RFID */}
@@ -522,9 +557,9 @@ export default function ItemEntryForm({
                         </div>
                     )}
 
-                    {/* Gold Weight */}
+                    {/* Gold Weight — label reflects the selected metal */}
                     <div className="form-group">
-                        <label className="form-label">Gold Wt (g)</label>
+                        <label className="form-label">{selectedMetal} Wt (g)</label>
                         <input className="form-input" type="number" min={0} step={0.001}
                             value={formData.estimatedGoldWeight}
                             onChange={e => onFormChange("estimatedGoldWeight", Number(e.target.value))}

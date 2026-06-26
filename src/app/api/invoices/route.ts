@@ -169,6 +169,7 @@ export async function POST(req: NextRequest) {
                 totalAmount: calc.totalAmount,
                 imageUrl: (item.imageUrl as string) || null,
                 inventoryItemId: (item.inventoryItemId as string) || null,
+                metalName: (item.metalName as string) || null,
             };
         });
 
