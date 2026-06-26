@@ -16,6 +16,7 @@ import {
     goldRateToPerGram,
     calcOldGoldValue,
     calcPasaDeduction,
+    calcPasaAdjustedWeight,
     calcPolishAmount,
     calcLabourAmount,
     calculateLineItem,
@@ -112,10 +113,19 @@ assertClose(calcOldGoldValue(0, 24, perGram), 0, 0.01, "0g old gold = 0");
 
 console.log("\n📉 Pasa Deduction");
 
-// Pond Pasa formula: PasaDeduction = PondPasaWeight × PasaRate × GoldRatePerGram
-// Example: 10g pure gold, 0.6 pasa rate, 5000 PKR/g = 10 × 0.6 × 5000 = 30,000
-assertClose(calcPasaDeduction(10, 0.6, 5000), 30000, 0.01, "10g × 0.6 × 5000 = 30,000");
+// Pasa is measured in ratti out of 96 (1 tola = 96 ratti), so the deduction is:
+//   PasaDeduction = goldWeight × (pasaRate / 96) × goldRatePerGram
+// Example: 10g, pasa 0.6, 5000 PKR/g = 10 × 0.6/96 × 5000 = 312.5
+assertClose(calcPasaDeduction(10, 0.6, 5000), 312.5, 0.01, "10g × 0.6/96 × 5000 = 312.5");
 assertClose(calcPasaDeduction(10, 0, 5000), 0, 0.01, "0 pasa rate = 0");
+
+// Consistency: the PKR deduction must equal the value of the gold weight that the
+// pasa adjustment removes (calcPasaDeduction and calcPasaAdjustedWeight must agree).
+{
+    const w = 10, pasa = 0.6, rate = 5000;
+    const removedWeightValue = (w - calcPasaAdjustedWeight(w, pasa)) * rate;
+    assertClose(calcPasaDeduction(w, pasa, rate), removedWeightValue, 0.01, "deduction == removed-weight × rate");
+}
 
 // ─── Full Line Item ────────────────────────────────────────────
 
