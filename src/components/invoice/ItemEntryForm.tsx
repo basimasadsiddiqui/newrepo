@@ -217,34 +217,13 @@ export default function ItemEntryForm({
             </div>
 
             <div className="card-body" style={{ padding: "10px 14px" }}>
-                {/* ── Row 1: Category, Metal, Description, Rate, Carat, Pieces, Size ── */}
+                {/* ── Row 1: Metal, Tag Caption, Category, Item Detail, Rate, Carat, Pieces, Size ── */}
                 <div style={{
                     display: "grid",
-                    gridTemplateColumns: "1.2fr 0.9fr 0.8fr 1.7fr 0.9fr 0.6fr 0.5fr 0.5fr",
+                    gridTemplateColumns: "0.9fr 0.8fr 1.2fr 1.7fr 0.9fr 0.6fr 0.5fr 0.5fr",
                     gap: "6px",
                     marginBottom: "6px",
                 }}>
-                    {/* Category */}
-                    <div className="form-group">
-                        <label className="form-label">Category</label>
-                        <select className="form-select"
-                            value={formData.categoryId}
-                            onChange={e => handleCategorySelectChange(e.target.value)}>
-                            <option value="">Select…</option>
-                            {categories.map(cat => (
-                                <option key={cat.id} value={cat.id}>{cat.name}</option>
-                            ))}
-                            {!hasDiamondCategory && <option value="__new__:Diamond">Diamond</option>}
-                            <option value="__new__">+ New Category</option>
-                        </select>
-                        {(formData.categoryId === "__new__" || formData.categoryId.startsWith("__new__:")) && (
-                            <input className="form-input" placeholder="Category name…"
-                                value={customCategoryName}
-                                onChange={e => handleCustomCategoryNameChange(e.target.value)}
-                                style={{ marginTop: 4 }} />
-                        )}
-                    </div>
-
                     {/* Metal Type */}
                     <div className="form-group">
                         <label className="form-label">Metal</label>
@@ -271,6 +250,27 @@ export default function ItemEntryForm({
                         <datalist id="item-tagcaption-list">
                             {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
                         </datalist>
+                    </div>
+
+                    {/* Category */}
+                    <div className="form-group">
+                        <label className="form-label">Category</label>
+                        <select className="form-select"
+                            value={formData.categoryId}
+                            onChange={e => handleCategorySelectChange(e.target.value)}>
+                            <option value="">Select…</option>
+                            {categories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                            {!hasDiamondCategory && <option value="__new__:Diamond">Diamond</option>}
+                            <option value="__new__">+ New Category</option>
+                        </select>
+                        {(formData.categoryId === "__new__" || formData.categoryId.startsWith("__new__:")) && (
+                            <input className="form-input" placeholder="Category name…"
+                                value={customCategoryName}
+                                onChange={e => handleCustomCategoryNameChange(e.target.value)}
+                                style={{ marginTop: 4 }} />
+                        )}
                     </div>
 
                     {/* Description */}
