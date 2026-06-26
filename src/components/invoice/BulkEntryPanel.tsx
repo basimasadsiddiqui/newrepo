@@ -681,7 +681,7 @@ export default function BulkEntryPanel({
             }}>
                 <h3 style={{ color: "var(--text-on-maroon)", display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem" }}>
                     <PackagePlus size={15} />
-                    Bulk Gold Purchase Entry
+                    Bulk Metal Purchase Entry
                 </h3>
             </div>
 

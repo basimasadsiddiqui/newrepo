@@ -1147,18 +1147,27 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       toast.error("Purchase Date is required");
       return;
     }
+    if (transactionType === "PURCHASE" && rateType === "FIXED" && !(Number(intlOunceRate) > 0)) {
+      toast.error("Ounce rate is required when Rate Type is Fixed");
+      return;
+    }
     const savedId = await saveToDb();
     if (savedId) {
       localStorage.removeItem(DRAFT_ITEMS_STORAGE_KEY);
       setItems([]);
     }
-  }, [transactionType, date, saveToDb]);
+  }, [transactionType, date, rateType, intlOunceRate, saveToDb]);
 
   const handleFinalize = useCallback(async () => {
     console.log("handleFinalize called. Items:", items.length, "InvoiceId:", invoiceId);
 
     if (transactionType === "PURCHASE" && !date) {
       toast.error("Purchase Date is required");
+      return;
+    }
+
+    if (transactionType === "PURCHASE" && rateType === "FIXED" && !(Number(intlOunceRate) > 0)) {
+      toast.error("Ounce rate is required when Rate Type is Fixed");
       return;
     }
 
@@ -1251,7 +1260,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     } finally {
       setIsLoading(false);
     }
-  }, [items, invoiceId, invoiceSummary.balance, partyRisk, saveToDb]);
+  }, [items, invoiceId, invoiceSummary.balance, partyRisk, saveToDb, transactionType, date, rateType, intlOunceRate]);
 
   const handleBulkAdd = useCallback((rows: BulkRow[]) => {
     const newItems = rows

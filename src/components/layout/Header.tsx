@@ -10,7 +10,7 @@ interface HeaderProps {
 
 const PAGE_TITLES: Record<string, { title: string; sub: string }> = {
     "/":                { title: "Sales Invoice",    sub: "Create & manage sale invoices" },
-    "/bulk-purchase":   { title: "Bulk Purchase",    sub: "Record bulk gold purchases" },
+    "/bulk-purchase":   { title: "Bulk Purchase",    sub: "Record bulk metal purchases" },
     "/purchase":        { title: "Purchase Invoice", sub: "Record incoming stock & purchases" },
     "/invoices":        { title: "Invoice History",  sub: "All finalized invoices" },
     "/payments":        { title: "Payments",         sub: "Track receivables & payables" },
