@@ -16,6 +16,7 @@ export interface BulkRow {
     categoryId: string;
     description: string;
     tagCaption?: string;
+    metalName?: string;
     carat: number;
     pieces: number;
     estimatedGoldWeight: number;
@@ -60,6 +61,9 @@ interface BulkEntryPanelProps {
     onSaveDraft?: () => Promise<void>;
     onGeneratePdf?: () => Promise<void>;
     categories: Category[];
+    metals?: string[];
+    onAddMetal?: (name: string) => void;
+    onRemoveMetal?: (name: string) => void;
     goldRate: number;
     polishBasis: PolishLabourBasis;
     polishRate: number;
@@ -76,6 +80,7 @@ function mkRow(carat = 21): BulkRow {
         categoryId: "",
         description: "",
         tagCaption: "",
+        metalName: "Gold",
         carat,
         pieces: 0,
         estimatedGoldWeight: 0,
@@ -93,6 +98,9 @@ export default function BulkEntryPanel({
     onSaveDraft,
     onGeneratePdf,
     categories,
+    metals = [],
+    onAddMetal,
+    onRemoveMetal,
     goldRate,
     polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate,
 }: BulkEntryPanelProps) {
@@ -105,6 +113,7 @@ export default function BulkEntryPanel({
 
     // ── Quick entry state ──
     const [quickDesc, setQuickDesc] = useState("");
+    const [quickMetal, setQuickMetal] = useState("Gold");
     const [quickTagCaption, setQuickTagCaption] = useState("");
     const [quickWeight, setQuickWeight] = useState<number>(0);
     const [quickLocalRate, setQuickLocalRate] = useState<number>(0);
@@ -116,6 +125,9 @@ export default function BulkEntryPanel({
     const [stoneDraft, setStoneDraft] = useState<StoneRow>(() => mkStoneRow());
     const [editingStoneId, setEditingStoneId] = useState<string | null>(null);
     const [showStoneModal, setShowStoneModal] = useState(false);
+
+    // Base metal name (Gold/Silver/…); carat is entered separately. Defaults to Gold.
+    const quickMetalSel = quickMetal || metals[0] || "Gold";
 
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
@@ -254,6 +266,7 @@ export default function BulkEntryPanel({
 
     const resetAll = () => {
         setQuickDesc("");
+        setQuickMetal("Gold");
         setQuickTagCaption("");
         setQuickWeight(0);
         setQuickLocalRate(0);
@@ -282,8 +295,9 @@ export default function BulkEntryPanel({
         return [{
             id: `bulk-quick-${Date.now()}`,
             categoryId: "",
-            description: quickDesc || "Bulk Gold Purchase",
+            description: quickDesc || "Bulk Metal Purchase",
             tagCaption: quickTagCaption,
+            metalName: quickMetalSel,
             carat: quickCarat,
             pieces: quickPieces,
             estimatedGoldWeight: quickWeight,
@@ -718,8 +732,43 @@ export default function BulkEntryPanel({
             {mode === "quick" && (
                 <div style={{ padding: "12px 14px", overflowY: "auto" }}>
 
-                    {/* 1. Tag Caption + Description */}
-                    <div style={{ display: "grid", gridTemplateColumns: "0.6fr 1fr", gap: 8, marginBottom: 8 }}>
+                    {/* 1. Metal + Tag Caption + Description */}
+                    <div style={{ display: "grid", gridTemplateColumns: "0.7fr 0.6fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Metal</label>
+                            <div style={{ display: "flex", gap: 4 }}>
+                                <select className="form-select" style={{ flex: 1, fontSize: "0.9rem" }}
+                                    value={quickMetalSel}
+                                    onChange={e => {
+                                        const v = e.target.value;
+                                        if (v === "__add__") {
+                                            const name = window.prompt("New metal name (e.g. Palladium)")?.trim();
+                                            if (name) { onAddMetal?.(name); setQuickMetal(name); }
+                                            return;
+                                        }
+                                        setQuickMetal(v);
+                                    }}>
+                                    {metals.map(m => <option key={m} value={m}>{m}</option>)}
+                                    {!metals.some(m => m.toLowerCase() === quickMetalSel.toLowerCase()) && (
+                                        <option value={quickMetalSel}>{quickMetalSel}</option>
+                                    )}
+                                    <option value="__add__">+ Add metal…</option>
+                                </select>
+                                <button type="button" className="btn btn-ghost btn-icon"
+                                    title={`Remove "${quickMetalSel}" from the metal list`}
+                                    disabled={metals.length <= 1}
+                                    onClick={() => {
+                                        if (window.confirm(`Remove "${quickMetalSel}" from the metal list?`)) {
+                                            onRemoveMetal?.(quickMetalSel);
+                                            const next = metals.find(m => m.toLowerCase() !== quickMetalSel.toLowerCase());
+                                            setQuickMetal(next ?? "");
+                                        }
+                                    }}
+                                    style={{ width: 30, minWidth: 30, padding: 0 }}>
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                        </div>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.8rem" }}>Tag Caption</label>
                             <input className="form-input"
@@ -753,7 +802,7 @@ export default function BulkEntryPanel({
                     {/* 2. Weight + Pcs + Rate — always 3-column */}
                     <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr 1fr", gap: 8, marginBottom: 8 }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Gold Weight (g)</label>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>{quickMetalSel} Weight (g)</label>
                             <div style={{ position: "relative" }}>
                                 <input className="form-input" type="number" min={0} step={0.001}
                                     value={quickWeight || ""}

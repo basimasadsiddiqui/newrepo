@@ -152,6 +152,11 @@ export default function ItemGrid({
     const show = (k: string) => !!visible[k];
     const colCount = columns.filter((c) => show(c.key)).length;
 
+    // Weight column header reflects the metal(s) on the invoice: one distinct
+    // metal -> "{Metal} Wt"; mixed -> "Metal Wt"; none set -> "Gold Wt".
+    const distinctMetals = Array.from(new Set(items.map((i) => (i.metalName || "").trim()).filter(Boolean)));
+    const metalWtLabel = (distinctMetals.length === 1 ? distinctMetals[0] : distinctMetals.length > 1 ? "Metal" : "Gold") + " Wt";
+
     return (
         <div
             className="card animate-fade-in"
@@ -195,7 +200,7 @@ export default function ItemGrid({
                             {show("description") && <th style={{ minWidth: "110px" }}>Description</th>}
                             {show("pieces") && <th style={{ minWidth: "32px", textAlign: "right" }}>Pcs</th>}
                             {show("carat") && <th style={{ minWidth: "32px", textAlign: "right" }}>Ct</th>}
-                            {show("goldWt") && <th style={{ minWidth: "68px", textAlign: "right", background: "rgba(201,168,76,0.18)", color: "var(--gold-dark)" }}>Gold Wt</th>}
+                            {show("goldWt") && <th style={{ minWidth: "68px", textAlign: "right", background: "rgba(201,168,76,0.18)", color: "var(--gold-dark)" }}>{metalWtLabel}</th>}
                             {show("kaatWt") && transactionType === "PURCHASE" && (
                                 <th style={{ minWidth: "68px", textAlign: "right", color: "var(--danger)" }}>Kaat Wt</th>
                             )}

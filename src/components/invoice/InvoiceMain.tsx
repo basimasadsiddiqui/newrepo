@@ -1347,6 +1347,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           imageUrl: null,
           inventoryItemId: null,
           metalTypeId: null,
+          metalName: r.metalName || null,
         } satisfies import("@/types").InvoiceItem;
       });
 
@@ -1486,6 +1487,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
               onSaveDraft={handleSaveDraft}
               onGeneratePdf={handleGeneratePdf}
               categories={categories}
+              metals={metals}
+              onAddMetal={handleAddMetal}
+              onRemoveMetal={handleRemoveMetal}
               goldRate={goldRate}
               polishBasis={polishBasis}
               polishRate={polishRate}
