@@ -185,9 +185,15 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                 totalAmount: calc.totalAmount,
                 imageUrl: (item.imageUrl as string) || null,
                 imageUrls: (item.imageUrls as string[]) || [],
+                guaranteedRatti: (item.guaranteedRatti as number) || 0,
                 inventoryItemId: (item.inventoryItemId as string) || null,
             };
         });
+
+        const totalPureGoldWeight = serverComputedItems.reduce(
+            (sum, i) => sum + (Number(i.adjustedGoldWeight) || 0),
+            0
+        );
 
         const serverSummary = calculateInvoiceSummary({
             items: serverComputedItems.map((i) => ({
@@ -258,6 +264,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                     pasaRate: toNumber(pasaRate, 0),
                     pasaDeduction: serverSummary.pasaDeduction || null,
                     totalGoldWeight: serverSummary.totalGoldWeight || 0,
+                    totalPureGoldWeight: totalPureGoldWeight || 0,
                     totalAmount: serverSummary.totalAmount || 0,
                     otherCharges: toNumber(otherCharges, 0),
                     discount: toNumber(discount, 0),
@@ -299,6 +306,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                         totalAmount: item.totalAmount,
                         imageUrl: item.imageUrl,
                         imageUrls: item.imageUrls || [],
+                        guaranteedRatti: item.guaranteedRatti || 0,
                         inventoryItemId: item.inventoryItemId,
                     })),
                 });

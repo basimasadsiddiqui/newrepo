@@ -171,6 +171,7 @@ model Invoice {
   labourBasis        String?         @default("Per Tola")
   labourRate         Decimal?        @db.Decimal(14, 4)
   totalGoldWeight    Decimal         @default(0) @db.Decimal(14, 4)
+  totalPureGoldWeight Decimal        @default(0) @db.Decimal(14, 4)
   totalAmount        Decimal         @default(0) @db.Decimal(14, 4)
   otherCharges       Decimal         @default(0) @db.Decimal(14, 4)
   discount           Decimal         @default(0) @db.Decimal(14, 4)
@@ -230,6 +231,7 @@ model InvoiceItem {
   huid                 String?
   tagCaption           String?
   metalName            String?
+  guaranteedRatti      Decimal        @default(0) @db.Decimal(14, 4)
   stoneRate            Decimal?       @db.Decimal(14, 4)
   imageUrl             String?
   imageUrls            String[]       @default([])
@@ -294,6 +296,8 @@ model LedgerEntry {
   type        LedgerType
   amount      Decimal             @db.Decimal(14, 4)
   balance     Decimal             @db.Decimal(14, 4)
+  goldWeight  Decimal             @default(0) @db.Decimal(14, 4)
+  goldBalance Decimal             @default(0) @db.Decimal(14, 4)
   narration   String?
   date        DateTime            @default(now())
   paymentTxId String?             @unique

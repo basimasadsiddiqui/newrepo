@@ -324,6 +324,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             totalAmount: Number(item.totalAmount) || 0,
             imageUrl: (item.imageUrl as string) || null,
             imageUrls: Array.isArray(item.imageUrls) ? (item.imageUrls as string[]) : [],
+            guaranteedRatti: Number(item.guaranteedRatti) || 0,
             inventoryItemId: (item.inventoryItemId as string) || null,
             metalTypeId: null,
           }));
@@ -935,6 +936,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         // not the entry form — preserve them across an edit/update.
         imageUrl: (editingItemIndex !== null ? items[editingItemIndex]?.imageUrl : itemForm.imageUrl) || null,
         imageUrls: (editingItemIndex !== null ? items[editingItemIndex]?.imageUrls : undefined) || [],
+        guaranteedRatti: (editingItemIndex !== null ? items[editingItemIndex]?.guaranteedRatti : undefined) ?? 0,
         inventoryItemId: itemForm.inventoryItemId || null,
         metalTypeId: itemForm.metalTypeId || null,
         metalName: itemForm.metalName || null,
@@ -1105,6 +1107,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         inventoryItemId: item.inventoryItemId || null,
         imageUrl: item.imageUrl || null,
         imageUrls: item.imageUrls || [],
+        guaranteedRatti: item.guaranteedRatti ?? 0,
         metalTypeId: item.metalTypeId || null,
         metalName: item.metalName || null,
       })),
@@ -1324,6 +1327,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           totalAmount: r.totalAmount ?? calc?.totalAmount ?? 0,
           imageUrl: null,
           imageUrls: [],
+          guaranteedRatti: r.guaranteedRatti ?? 0,
           inventoryItemId: null,
           metalTypeId: null,
           metalName: r.metalName || null,

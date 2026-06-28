@@ -338,6 +338,37 @@ export function calculateLineItem(params: {
     };
 }
 
+/**
+ * Per-invoice split of value into the GOLD portion (pure 24k weight, in grams)
+ * and the CASH portion (stones + beads + diamonds + labour + polish, in rupees).
+ * Used by the gold-based party ledger / statement.
+ */
+export function calcInvoiceGoldBreakdown(items: Array<{
+    adjustedGoldWeight?: number;
+    estimatedGoldWeight?: number;
+    stoneAmount?: number;
+    beadsAmount?: number;
+    diamondAmount?: number;
+    labourAmount?: number;
+    polishAmount?: number;
+}>): { pureGoldWeight: number; stoneLabourAmount: number } {
+    let pure = new Decimal(0);
+    let cash = new Decimal(0);
+    for (const it of items) {
+        pure = pure.plus(it.adjustedGoldWeight ?? it.estimatedGoldWeight ?? 0);
+        cash = cash
+            .plus(it.stoneAmount ?? 0)
+            .plus(it.beadsAmount ?? 0)
+            .plus(it.diamondAmount ?? 0)
+            .plus(it.labourAmount ?? 0)
+            .plus(it.polishAmount ?? 0);
+    }
+    return {
+        pureGoldWeight: pure.toDecimalPlaces(4).toNumber(),
+        stoneLabourAmount: cash.toDecimalPlaces(4).toNumber(),
+    };
+}
+
 // ─── Invoice Summary Calculation ───────────────────────────────
 
 export function calculateInvoiceSummary(params: {

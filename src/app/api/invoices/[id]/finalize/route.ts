@@ -93,6 +93,14 @@ export async function POST(req: NextRequest, context: RouteParams) {
                         ? currentBalance + invoiceAmount
                         : currentBalance - invoiceAmount;
 
+                    // Gold dimension: pure 24k gold moved by this invoice.
+                    // Purchase → supplier gold balance increases (gold received/owed);
+                    // Sale → decreases.
+                    const pureGold = Number(invoice.totalPureGoldWeight)
+                        || invoice.items.reduce((s, it) => s + (Number(it.adjustedGoldWeight) || 0), 0);
+                    const goldDelta = isSale ? -pureGold : pureGold;
+                    const newGoldBalance = Number(party.goldBalance) + goldDelta;
+
                     await tx.ledgerEntry.create({
                         data: {
                             orgId: invoice.orgId,
@@ -101,14 +109,16 @@ export async function POST(req: NextRequest, context: RouteParams) {
                             type: ledgerType,
                             amount: Math.abs(invoiceAmount),
                             balance: newBalance,
+                            goldWeight: goldDelta,
+                            goldBalance: newGoldBalance,
                             narration,
                         },
                     });
 
-                    // Update party balance
+                    // Update party balances (cash + gold)
                     await tx.party.update({
                         where: { id: invoice.partyId },
-                        data: { balance: newBalance },
+                        data: { balance: newBalance, goldBalance: newGoldBalance },
                     });
                 }
             }

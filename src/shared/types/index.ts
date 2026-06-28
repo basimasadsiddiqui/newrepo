@@ -142,6 +142,8 @@ export interface InvoiceItem {
     imageUrl: string | null;
     /** Additional images for this item (gallery). imageUrl mirrors imageUrls[0] for back-compat. */
     imageUrls?: string[];
+    /** Supplier's claimed ratti kaat guarantee (purchases). */
+    guaranteedRatti?: number;
 
     inventoryItemId?: string | null;
     metalTypeId?: string | null;
@@ -180,6 +182,7 @@ export interface Invoice {
     labourRate: number | null;
 
     totalGoldWeight: number;
+    totalPureGoldWeight?: number;
     totalAmount: number;
     otherCharges: number;
     discount: number;

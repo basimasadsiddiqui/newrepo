@@ -25,7 +25,7 @@ import {
     Loader2
 } from "lucide-react";
 
-import { formatCurrency } from "@shared/utils";
+import { formatCurrency, formatWeight } from "@shared/utils";
 import { Invoice } from "@shared/types";
 
 interface InvoiceListResponse {
@@ -141,6 +141,7 @@ export default function InvoiceHistoryPage() {
                                 <th className="px-6 py-3">Date</th>
                                 <th className="px-6 py-3">Party</th>
                                 <th className="px-6 py-3">Type</th>
+                                <th className="px-6 py-3">Gold (24k)</th>
                                 <th className="px-6 py-3">Total Amount</th>
                                 <th className="px-6 py-3">Balance</th>
                                 <th className="px-6 py-3 text-center">Status</th>
@@ -150,7 +151,7 @@ export default function InvoiceHistoryPage() {
                         <tbody className="divide-y divide-border">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">
+                                    <td colSpan={9} className="px-6 py-8 text-center text-muted-foreground">
                                         <div className="flex justify-center items-center gap-2">
                                             <Loader2 className="animate-spin w-4 h-4" />
                                             Loading invoices...
@@ -159,12 +160,21 @@ export default function InvoiceHistoryPage() {
                                 </tr>
                             ) : filteredInvoices.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">
+                                    <td colSpan={9} className="px-6 py-8 text-center text-muted-foreground">
                                         No invoices found.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredInvoices.map((inv) => (
+                                filteredInvoices.map((inv) => {
+                                    // Route bulk-purchase invoices to the bulk view, regular purchases
+                                    // to /purchase, and sales to the sale invoice page.
+                                    const isBulk = Array.isArray(inv.items) && inv.items.some((it) => it.isBulkPurchase);
+                                    const href = inv.transactionType !== "PURCHASE"
+                                        ? `/?id=${inv.id}`
+                                        : isBulk
+                                            ? `/bulk-purchase?id=${inv.id}`
+                                            : `/purchase?id=${inv.id}`;
+                                    return (
                                     <tr key={inv.id} className="hover:bg-muted/50 transition-colors">
                                         <td className="px-6 py-4 font-medium">#{inv.orderNumber}</td>
                                         <td className="px-6 py-4 text-muted-foreground">
@@ -181,6 +191,12 @@ export default function InvoiceHistoryPage() {
                                                 }`}>
                                                 {inv.transactionType}
                                             </span>
+                                            {isBulk && (
+                                                <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Bulk</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 font-mono text-amber-700 dark:text-amber-400">
+                                            {Number(inv.totalPureGoldWeight) > 0 ? formatWeight(Number(inv.totalPureGoldWeight)) : "—"}
                                         </td>
                                         <td className="px-6 py-4 font-mono">
                                             {formatCurrency(Number(inv.totalAmount))}
@@ -201,7 +217,7 @@ export default function InvoiceHistoryPage() {
                                         <td className="px-6 py-4 text-right">
                                             {inv.status === "DRAFT" ? (
                                                 <Link
-                                                    href={inv.transactionType === "PURCHASE" ? `/purchase?id=${inv.id}` : `/?id=${inv.id}`}
+                                                    href={href}
                                                     className="btn btn-sm btn-ghost text-primary hover:bg-primary/10"
                                                 >
                                                     <Edit className="w-4 h-4 mr-1" />
@@ -209,7 +225,7 @@ export default function InvoiceHistoryPage() {
                                                 </Link>
                                             ) : (
                                                 <Link
-                                                    href={inv.transactionType === "PURCHASE" ? `/purchase?id=${inv.id}` : `/?id=${inv.id}`}
+                                                    href={href}
                                                     className="btn btn-sm btn-ghost text-muted-foreground hover:bg-muted"
                                                 >
                                                     <Eye className="w-4 h-4 mr-1" />
@@ -218,7 +234,8 @@ export default function InvoiceHistoryPage() {
                                             )}
                                         </td>
                                     </tr>
-                                ))
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>

@@ -28,6 +28,7 @@ export interface BulkRow {
     kaatRate?: number;
     stoneWeight: number;
     stoneAmount?: number;         // pre-calculated stone total
+    guaranteedRatti?: number;     // supplier's claimed ratti kaat guarantee
     goldAmount?: number;          // pre-calculated gold value
     labourAmount?: number;        // pre-calculated labour
     totalAmount?: number;         // pre-calculated total
@@ -317,6 +318,7 @@ export default function BulkEntryPanel({
             kaatRate: localKaatRate,
             stoneWeight: hasStone ? totalStoneWeightG : 0,
             stoneAmount: hasStone ? totalStoneAmount : 0,
+            guaranteedRatti: gRatti,
             goldAmount: quickCalc?.goldAmount ?? 0,
             labourAmount: quickCalc?.labourAmount ?? 0,
             totalAmount: quickCalc?.totalAmount ?? 0,

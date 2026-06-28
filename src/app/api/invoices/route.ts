@@ -169,10 +169,17 @@ export async function POST(req: NextRequest) {
                 totalAmount: calc.totalAmount,
                 imageUrl: (item.imageUrl as string) || null,
                 imageUrls: (item.imageUrls as string[]) || [],
+                guaranteedRatti: (item.guaranteedRatti as number) || 0,
                 inventoryItemId: (item.inventoryItemId as string) || null,
                 metalName: (item.metalName as string) || null,
             };
         });
+
+        // Pure 24k gold across the invoice (sum of per-item kaat-adjusted weight)
+        const totalPureGoldWeight = serverComputedItems.reduce(
+            (sum: number, i: any) => sum + (Number(i.adjustedGoldWeight) || 0),
+            0
+        );
 
         // RECALCULATE SUMMARY SERVER-SIDE
         const serverSummary = calculateInvoiceSummary({
@@ -257,6 +264,7 @@ export async function POST(req: NextRequest) {
                 pasaRate: pasaRate || null,
                 pasaDeduction: serverSummary.pasaDeduction || null,
                 totalGoldWeight: serverSummary.totalGoldWeight || 0,
+                totalPureGoldWeight: totalPureGoldWeight || 0,
                 totalAmount: serverSummary.totalAmount || 0,
                 otherCharges: otherCharges || 0,
                 discount: discount || 0,

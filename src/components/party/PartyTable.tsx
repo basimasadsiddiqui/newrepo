@@ -16,7 +16,8 @@
 
 import { Party } from "@/types";
 import { formatCurrency } from "@/lib/utils";
-import { Edit2, Trash2 } from "lucide-react";
+import { Edit2, Trash2, FileText } from "lucide-react";
+import Link from "next/link";
 
 interface PartyTableProps {
     parties: Party[];
@@ -71,7 +72,9 @@ export default function PartyTable({
                             <tr key={party.id} className="group">
                                 <td className="text-gray-400 text-xs">{index + 1}</td>
                                 <td className="font-medium text-[var(--maroon)]">
-                                    {party.name}
+                                    <Link href={`/parties/${party.id}`} className="hover:underline" title="View statement / ledger">
+                                        {party.name}
+                                    </Link>
                                 </td>
                                 <td>
                                     <span
@@ -111,6 +114,13 @@ export default function PartyTable({
                                 </td>
                                 <td className="text-center">
                                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Link
+                                            href={`/parties/${party.id}`}
+                                            className="p-1.5 text-[var(--maroon)] hover:bg-amber-50 rounded"
+                                            title="View statement / ledger"
+                                        >
+                                            <FileText size={16} />
+                                        </Link>
                                         <button
                                             onClick={() => onEdit(party)}
                                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
