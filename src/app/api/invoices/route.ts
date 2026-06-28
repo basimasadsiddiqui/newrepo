@@ -168,6 +168,7 @@ export async function POST(req: NextRequest) {
                 labourAmount: calc.labourAmount,
                 totalAmount: calc.totalAmount,
                 imageUrl: (item.imageUrl as string) || null,
+                imageUrls: (item.imageUrls as string[]) || [],
                 inventoryItemId: (item.inventoryItemId as string) || null,
                 metalName: (item.metalName as string) || null,
             };

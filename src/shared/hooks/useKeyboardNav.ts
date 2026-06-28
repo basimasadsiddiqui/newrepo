@@ -37,10 +37,11 @@ export function useKeyboardNav({
                 return;
             }
 
-            if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
+            // Enter → next field; Shift+Enter → previous field (mirrors Tab / Shift+Tab)
+            if (e.key === "Enter" && !e.ctrlKey) {
                 const target = e.target as HTMLElement;
                 const tagName = target.tagName.toLowerCase();
-                if (tagName === "input" || tagName === "select") {
+                if (tagName === "input" || tagName === "select" || tagName === "textarea") {
                     e.preventDefault();
                     const focusable = Array.from(
                         document.querySelectorAll<HTMLElement>(
@@ -48,8 +49,10 @@ export function useKeyboardNav({
                         )
                     ).filter((el) => el.offsetParent !== null);
                     const idx = focusable.indexOf(target);
-                    if (idx >= 0 && idx < focusable.length - 1) {
-                        focusable[idx + 1].focus();
+                    if (idx < 0) return;
+                    const nextIdx = e.shiftKey ? idx - 1 : idx + 1;
+                    if (nextIdx >= 0 && nextIdx < focusable.length) {
+                        focusable[nextIdx].focus();
                     }
                     return;
                 }

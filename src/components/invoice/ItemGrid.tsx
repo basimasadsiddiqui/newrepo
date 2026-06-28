@@ -149,7 +149,19 @@ export default function ItemGrid({
         return cols;
     }, [transactionType, isBulkMode]);
 
-    const show = (k: string) => !!visible[k];
+    // Auto-hide stone/beads/diamond weight columns unless at least one item carries
+    // that weight (client: only show these columns once a value is entered).
+    const hasStoneWt   = items.some((i) => Number(i.stoneWeight) > 0);
+    const hasBeadsWt   = items.some((i) => Number(i.beadsWeight) > 0);
+    const hasDiamondWt = items.some((i) => Number(i.diamondWeight) > 0);
+
+    const show = (k: string) => {
+        if (!visible[k]) return false;
+        if (k === "stoneWt") return hasStoneWt;
+        if (k === "beadsWt") return hasBeadsWt;
+        if (k === "diamondWt") return hasDiamondWt;
+        return true;
+    };
     const colCount = columns.filter((c) => show(c.key)).length;
 
     // Weight column header reflects the metal(s) on the invoice: one distinct
@@ -243,10 +255,16 @@ export default function ItemGrid({
                                     {show("sno") && <td style={{ fontSize: "0.75rem" }}>{index + 1}</td>}
                                     {show("image") && (
                                         <td>
-                                            {item.imageUrl ? (
-                                                // eslint-disable-next-line @next/next/no-img-element
+                                            {(() => {
+                                                const imgs = (item.imageUrls && item.imageUrls.length > 0)
+                                                    ? item.imageUrls
+                                                    : (item.imageUrl ? [item.imageUrl] : []);
+                                                const extra = imgs.length - 1;
+                                                return imgs.length > 0 ? (
+                                                <div style={{ position: "relative", width: 36, height: 36 }}>
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
-                                                    src={item.imageUrl}
+                                                    src={imgs[0]}
                                                     alt={item.categoryName || "Item"}
                                                     style={{
                                                         width: "36px",
@@ -257,7 +275,18 @@ export default function ItemGrid({
                                                         cursor: "pointer",
                                                     }}
                                                     onClick={() => onImageUpload(index)}
+                                                    title={`${imgs.length} image${imgs.length > 1 ? "s" : ""} — click to manage`}
                                                 />
+                                                {extra > 0 && (
+                                                    <span style={{
+                                                        position: "absolute", bottom: -3, right: -3,
+                                                        background: "var(--maroon)", color: "white",
+                                                        fontSize: "0.5rem", fontWeight: 700, lineHeight: 1,
+                                                        padding: "2px 4px", borderRadius: 8,
+                                                        border: "1px solid white", pointerEvents: "none",
+                                                    }}>+{extra}</span>
+                                                )}
+                                                </div>
                                             ) : (
                                                 <div
                                                     onClick={() => onImageUpload(index)}
@@ -277,7 +306,8 @@ export default function ItemGrid({
                                                 >
                                                     <ImageIcon size={14} style={{ color: "var(--text-muted)", opacity: 0.5 }} />
                                                 </div>
-                                            )}
+                                            );
+                                            })()}
                                         </td>
                                     )}
                                     {show("category") && <td style={{ fontSize: "0.75rem" }}>{item.categoryName || "—"}</td>}

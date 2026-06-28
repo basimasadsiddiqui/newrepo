@@ -184,6 +184,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                 labourAmount: calc.labourAmount,
                 totalAmount: calc.totalAmount,
                 imageUrl: (item.imageUrl as string) || null,
+                imageUrls: (item.imageUrls as string[]) || [],
                 inventoryItemId: (item.inventoryItemId as string) || null,
             };
         });
@@ -297,6 +298,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                         labourAmount: item.labourAmount,
                         totalAmount: item.totalAmount,
                         imageUrl: item.imageUrl,
+                        imageUrls: item.imageUrls || [],
                         inventoryItemId: item.inventoryItemId,
                     })),
                 });

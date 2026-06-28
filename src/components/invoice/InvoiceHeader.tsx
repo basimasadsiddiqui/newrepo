@@ -342,19 +342,7 @@ export default function InvoiceHeader({
                         </div>
                     )}
 
-                    {/* Supplier Invoice No - Purchase Only */}
-                    {!isSale && onSupplierInvoiceNoChange && (
-                        <div className="form-group">
-                            <label className="form-label">Supplier Inv No</label>
-                            <input
-                                className="form-input"
-                                value={supplierInvoiceNo}
-                                onChange={(e) => onSupplierInvoiceNoChange(e.target.value)}
-                                style={{ height: "32px" }}
-                                placeholder="Ref #"
-                            />
-                        </div>
-                    )}
+                    {/* Supplier Inv No removed — the supplier's receipt is uploaded as a photo instead */}
 
                     {/* Currency - Purchase Only */}
                     {!isSale && onCurrencyChange && (

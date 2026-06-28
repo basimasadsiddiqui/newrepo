@@ -7,9 +7,10 @@ import {
     Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
-import { calculateLineItem, goldRateToPerGram, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola, gramsToTolaMashaRatti } from "@/lib/calculationEngine";
+import { calculateLineItem, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
 import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
+import { useDescriptionHistory } from "@/hooks/useDescriptionHistory";
 
 export interface BulkRow {
     id: string;
@@ -114,6 +115,7 @@ export default function BulkEntryPanel({
     // ── Quick entry state ──
     const [quickDesc, setQuickDesc] = useState("");
     const [quickMetal, setQuickMetal] = useState("Gold");
+    const [quickCategoryId, setQuickCategoryId] = useState("");
     const [quickTagCaption, setQuickTagCaption] = useState("");
     const [quickWeight, setQuickWeight] = useState<number>(0);
     const [quickLocalRate, setQuickLocalRate] = useState<number>(0);
@@ -132,14 +134,19 @@ export default function BulkEntryPanel({
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
 
-    // Description autocomplete — product catalog suggestions for the typed item name
+    // Description autocomplete — previously-typed descriptions (memory) +
+    // product catalog suggestions for the typed item name.
+    const { history: descHistory, remember: rememberDesc } = useDescriptionHistory();
     const productSuggestions = useProductTagSuggestions(quickDesc);
-    const descSuggestions = Array.from(new Set(productSuggestions.map(p => p.name)));
+    const descSuggestions = Array.from(new Set([...descHistory, ...productSuggestions.map(p => p.name)]));
 
-    // Auto-load a unique tag caption once the item name is finalized
+    // Auto-load a unique tag caption once the item name is finalized; also
+    // remember the description so it can be suggested next time.
     const handleQuickDescBlur = async () => {
         const desc = quickDesc.trim();
-        if (!desc || quickTagCaption) return;
+        if (!desc) return;
+        rememberDesc(desc);
+        if (quickTagCaption) return;
         const tag = await assignProductTag(desc);
         if (tag) setQuickTagCaption(tag);
     };
@@ -165,7 +172,8 @@ export default function BulkEntryPanel({
 
     // ── Labour ──
     const [localLabourBasis, setLocalLabourBasis] = useState<LocalLabourBasis>("Per Gram");
-    const [localLabourRate, setLocalLabourRate] = useState<number>(labourRate);
+    // Default to 0 — the operator types the labour rate per bulk lot (not the global default)
+    const [localLabourRate, setLocalLabourRate] = useState<number>(0);
 
 
     // ── Categorize state ──
@@ -267,6 +275,7 @@ export default function BulkEntryPanel({
     const resetAll = () => {
         setQuickDesc("");
         setQuickMetal("Gold");
+        setQuickCategoryId("");
         setQuickTagCaption("");
         setQuickWeight(0);
         setQuickLocalRate(0);
@@ -282,7 +291,7 @@ export default function BulkEntryPanel({
         setLocalKaatBasis("Ratti Kaat");
         setLocalKaatRate(0);
         setLocalLabourBasis("Per Gram");
-        setLocalLabourRate(labourRate);
+        setLocalLabourRate(0);
         setTotalBulkWeight(0);
         setBulkCarat(0);
         setRows([mkRow(0), mkRow(0), mkRow(0)]);
@@ -294,7 +303,7 @@ export default function BulkEntryPanel({
         const kaatWt = kaatPureWeight !== null ? quickWeight - kaatPureWeight : 0;
         return [{
             id: `bulk-quick-${Date.now()}`,
-            categoryId: "",
+            categoryId: quickCategoryId,
             description: quickDesc || "Bulk Metal Purchase",
             tagCaption: quickTagCaption,
             metalName: quickMetalSel,
@@ -732,8 +741,8 @@ export default function BulkEntryPanel({
             {mode === "quick" && (
                 <div style={{ padding: "12px 14px", overflowY: "auto" }}>
 
-                    {/* 1. Metal + Tag Caption + Description */}
-                    <div style={{ display: "grid", gridTemplateColumns: "0.7fr 0.6fr 1fr", gap: 8, marginBottom: 8 }}>
+                    {/* 1. Metal + Category + Tag Caption + Description */}
+                    <div style={{ display: "grid", gridTemplateColumns: "0.7fr 0.8fr 0.6fr 1fr", gap: 8, marginBottom: 8 }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.8rem" }}>Metal</label>
                             <div style={{ display: "flex", gap: 4 }}>
@@ -768,6 +777,15 @@ export default function BulkEntryPanel({
                                     <Trash2 size={12} />
                                 </button>
                             </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Category</label>
+                            <select className="form-select" style={{ fontSize: "0.9rem" }}
+                                value={quickCategoryId}
+                                onChange={e => setQuickCategoryId(e.target.value)}>
+                                <option value="">Select…</option>
+                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
                         </div>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.8rem" }}>Tag Caption</label>
@@ -838,20 +856,6 @@ export default function BulkEntryPanel({
                             </div>
                         </div>
                     </div>
-
-                    {/* Gold Weight — Pakka / Kacha Tola conversion */}
-                    {quickWeight > 0 && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, marginBottom: 8 }}>
-                            <div>
-                                <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola (÷12.150)</div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>{gramsToPakkaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
-                            </div>
-                            <div>
-                                <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola (÷11.664)</div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>{gramsToKachaTola(quickWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* 3. Purity & Kaat */}
                     <div style={{ padding: "8px 10px", background: "var(--cream-light)", border: "1px solid var(--gold-light)", borderRadius: 8, marginBottom: 8 }}>
@@ -1094,34 +1098,15 @@ export default function BulkEntryPanel({
                                         </div>
                                     </>
                                 )}
-                                {/* Gold Amount — both Pakka and Kacha tola, based on entered Gold Wt */}
+                                {/* Gold Value — single computed price (net weight after kaat × rate) */}
                                 {quickWeight > 0 && (
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: "4px 6px", background: "rgba(201,168,76,0.08)", borderRadius: 5, margin: "2px 0" }}>
-                                        <div>
-                                            <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gold (Pakka ÷12.150)</div>
-                                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>
-                                                Rs. {(quickWeight * goldRateToPerGramPakka(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Gold (Kacha ÷11.664)</div>
-                                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                                                Rs. {(quickWeight * goldRateToPerGram(quickLocalRate || goldRate)).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                            </div>
-                                        </div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
+                                        <span style={{ color: "var(--text-muted)" }}>Gold Value</span>
+                                        <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontWeight: 600 }}>
+                                            Rs. {(quickCalc.goldAmount ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                                        </span>
                                     </div>
                                 )}
-                                {/* Tola / Masha / Ratti breakdown of Pure Wt */}
-                                {quickCalc.adjustedGoldWeight > 0 && (() => {
-                                    const tmr = gramsToTolaMashaRatti(quickCalc.adjustedGoldWeight);
-                                    return (
-                                        <div style={{ background: "rgba(92,10,10,0.04)", borderRadius: 5, padding: "4px 6px", margin: "2px 0", textAlign: "center" }}>
-                                            <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.75rem", color: "var(--maroon)" }}>
-                                                {tmr.tola} Tola {tmr.masha} Masha {tmr.ratti.toFixed(2)} Ratti
-                                            </span>
-                                        </div>
-                                    );
-                                })()}
                                 {/* Amount rows */}
                                 {[
                                     { label: "Labour", value: quickCalc.labourAmount, show: (quickCalc.labourAmount ?? 0) !== 0 },
@@ -1234,6 +1219,9 @@ export default function BulkEntryPanel({
                     <datalist id="bulk-row-tagcaption-list">
                         {tagCaptionSuggestions.map(name => <option key={name} value={name} />)}
                     </datalist>
+                    <datalist id="bulk-row-desc-list">
+                        {descHistory.map(name => <option key={name} value={name} />)}
+                    </datalist>
                     <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                             <thead>
@@ -1273,7 +1261,9 @@ export default function BulkEntryPanel({
                                                     placeholder="e.g. Gold Rings 21K…"
                                                     value={row.description}
                                                     onFocus={sel}
+                                                    list="bulk-row-desc-list"
                                                     onChange={e => update(row.id, "description", e.target.value)}
+                                                    onBlur={e => rememberDesc(e.target.value)}
                                                 />
                                             </td>
                                             <td style={{ padding: "4px 5px", width: 58 }}>

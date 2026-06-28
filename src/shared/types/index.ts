@@ -140,6 +140,8 @@ export interface InvoiceItem {
     diamondEntries?: DiamondEntry[];
 
     imageUrl: string | null;
+    /** Additional images for this item (gallery). imageUrl mirrors imageUrls[0] for back-compat. */
+    imageUrls?: string[];
 
     inventoryItemId?: string | null;
     metalTypeId?: string | null;

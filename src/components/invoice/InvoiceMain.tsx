@@ -22,7 +22,7 @@
 
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef, type ChangeEvent } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 
 import { useSearchParams } from "next/navigation";
@@ -230,7 +230,6 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [hasHydrated, setHasHydrated] = useState<boolean>(false);
   const [imageTargetIndex, setImageTargetIndex] = useState<number | null>(null);
-  const itemImageInputRef = useRef<HTMLInputElement>(null);
   const stockItemPrefillRef = useRef<string | null>(null);
   const draftStorageWarningShownRef = useRef<boolean>(false);
 
@@ -324,6 +323,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             labourAmount: Number(item.labourAmount) || 0,
             totalAmount: Number(item.totalAmount) || 0,
             imageUrl: (item.imageUrl as string) || null,
+            imageUrls: Array.isArray(item.imageUrls) ? (item.imageUrls as string[]) : [],
             inventoryItemId: (item.inventoryItemId as string) || null,
             metalTypeId: null,
           }));
@@ -606,6 +606,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           labourAmount: calc.labourAmount,
           totalAmount: calc.totalAmount,
           imageUrl: stockItem.product?.imageUrl || null,
+          imageUrls: stockItem.product?.imageUrl ? [stockItem.product.imageUrl] : [],
           inventoryItemId: stockItem.id,
           metalTypeId: stockItem.metalType?.id || stockItem.product?.metalType?.id || null,
         };
@@ -930,7 +931,10 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         polishAmount: calc.polishAmount,
         labourAmount: calc.labourAmount,
         totalAmount: calc.totalAmount,
-        imageUrl: itemForm.imageUrl || null,
+        // Item images live on the grid row (edited via the image gallery modal),
+        // not the entry form — preserve them across an edit/update.
+        imageUrl: (editingItemIndex !== null ? items[editingItemIndex]?.imageUrl : itemForm.imageUrl) || null,
+        imageUrls: (editingItemIndex !== null ? items[editingItemIndex]?.imageUrls : undefined) || [],
         inventoryItemId: itemForm.inventoryItemId || null,
         metalTypeId: itemForm.metalTypeId || null,
         metalName: itemForm.metalName || null,
@@ -1031,47 +1035,20 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     toast.success("Item removed");
   }, []);
 
+  // Open the per-item image gallery modal for the given row.
   const handleImageUpload = useCallback((index: number) => {
     setImageTargetIndex(index);
-    itemImageInputRef.current?.click();
   }, []);
 
-  const handleItemImageSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file || imageTargetIndex === null) {
-      setImageTargetIndex(null);
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select a valid image file");
-      setImageTargetIndex(null);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        toast.error("Failed to read image");
-        setImageTargetIndex(null);
-        return;
-      }
-
-      setItems((prev) =>
-        prev.map((item, idx) =>
-          idx === imageTargetIndex ? { ...item, imageUrl: result } : item
-        )
-      );
-      toast.success("Item image updated");
-      setImageTargetIndex(null);
-    };
-    reader.onerror = () => {
-      toast.error("Failed to read image");
-      setImageTargetIndex(null);
-    };
-    reader.readAsDataURL(file);
+  // Persist the edited gallery back onto the item; imageUrl mirrors the first image.
+  const handleItemImagesChange = useCallback((urls: string[]) => {
+    setItems((prev) =>
+      prev.map((item, idx) =>
+        idx === imageTargetIndex
+          ? { ...item, imageUrls: urls, imageUrl: urls[0] ?? null }
+          : item
+      )
+    );
   }, [imageTargetIndex]);
 
   // ── SAVE / FINALIZE ──
@@ -1127,6 +1104,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         diamondEntries: item.diamondEntries || undefined,
         inventoryItemId: item.inventoryItemId || null,
         imageUrl: item.imageUrl || null,
+        imageUrls: item.imageUrls || [],
         metalTypeId: item.metalTypeId || null,
         metalName: item.metalName || null,
       })),
@@ -1345,6 +1323,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           labourAmount: r.labourAmount ?? calc?.labourAmount ?? 0,
           totalAmount: r.totalAmount ?? calc?.totalAmount ?? 0,
           imageUrl: null,
+          imageUrls: [],
           inventoryItemId: null,
           metalTypeId: null,
           metalName: r.metalName || null,
@@ -1584,14 +1563,32 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         </div>
       )}
 
+      {/* ── Per-item image gallery modal ── */}
+      {imageTargetIndex !== null && items[imageTargetIndex] && (
+        <div
+          onClick={() => setImageTargetIndex(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 300,
+            background: "rgba(26,18,8,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(560px, 96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+            <PhotoSystem
+              photos={items[imageTargetIndex].imageUrls ?? (items[imageTargetIndex].imageUrl ? [items[imageTargetIndex].imageUrl as string] : [])}
+              onPhotosChange={handleItemImagesChange}
+              label={`Item Images — ${items[imageTargetIndex].description || `Row ${imageTargetIndex + 1}`}`}
+              maxPhotos={6}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => setImageTargetIndex(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Row 3: Item Grid (FULL WIDTH — no horizontal scroll) ── */}
-      <input
-        ref={itemImageInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleItemImageSelected}
-        style={{ display: "none" }}
-      />
       <ItemGrid
         transactionType={transactionType}
         items={items}
@@ -1638,8 +1635,10 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         }}
       />
 
-      {/* ── Photo System — shown after summary in bulk mode ── */}
-      {isBulkMode && <PhotoSystem photos={photos} onPhotosChange={setPhotos} />}
+      {/* ── Supplier receipt / photos — for all purchases (bulk + regular) ── */}
+      {transactionType === "PURCHASE" && (
+        <PhotoSystem photos={photos} onPhotosChange={setPhotos} label="Supplier Receipt / Photos" />
+      )}
 
       {/* ── Bulk Add Modal (re-categorize existing bulk items only) ── */}
       <BulkAddModal
