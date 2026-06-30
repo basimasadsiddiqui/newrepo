@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@core/database";
 import { PaymentCategory, PaymentStatus } from "@prisma/client";
+import { convertInvoiceBodyToPkr } from "@/shared/utils/currency";
 
 const ORG_ID = "org-akhtar";
 
@@ -57,6 +58,11 @@ export async function POST(req: NextRequest) {
     try {
         console.log("POST /api/invoices - Starting invoice creation");
         const body = await req.json();
+        // Foreign-currency purchases are ENTERED in the selected currency but STORED in PKR.
+        // Convert every monetary field to PKR (× Conv.Rate) up-front so the recompute,
+        // ledger and payment logic downstream all operate in the PKR base. Weight/percent
+        // fields (goldReceived, kaatRate, pasaRate, *Weight, intlOunceRate) are NOT money.
+        convertInvoiceBodyToPkr(body);
         console.log("Request body received:", JSON.stringify(body, null, 2));
         const {
             transactionType = "SALE",
@@ -86,7 +92,11 @@ export async function POST(req: NextRequest) {
             totalGoldWeight: _clientTotalGoldWeight,
             totalAmount: _clientTotalAmount,
             otherCharges = 0,
+            otherChargesMode = "RS",
+            otherChargesWeight = 0,
             discount = 0,
+            discountMode = "RS",
+            discountWeight = 0,
             cashReceived = 0,
             goldReceived = 0,
             balance: _clientBalance,
@@ -267,7 +277,11 @@ export async function POST(req: NextRequest) {
                 totalPureGoldWeight: totalPureGoldWeight || 0,
                 totalAmount: serverSummary.totalAmount || 0,
                 otherCharges: otherCharges || 0,
+                otherChargesMode: otherChargesMode === "GOLD" ? "GOLD" : "RS",
+                otherChargesWeight: otherChargesWeight || 0,
                 discount: discount || 0,
+                discountMode: discountMode === "GOLD" ? "GOLD" : "RS",
+                discountWeight: discountWeight || 0,
                 cashReceived: cashReceived || 0,
                 goldReceived: goldReceived || 0,
                 balance: serverSummary.balance || 0,

@@ -174,7 +174,11 @@ model Invoice {
   totalPureGoldWeight Decimal        @default(0) @db.Decimal(14, 4)
   totalAmount        Decimal         @default(0) @db.Decimal(14, 4)
   otherCharges       Decimal         @default(0) @db.Decimal(14, 4)
+  otherChargesMode   String          @default("RS") // "RS" = rupees, "GOLD" = pure gold grams
+  otherChargesWeight Decimal         @default(0) @db.Decimal(14, 4)
   discount           Decimal         @default(0) @db.Decimal(14, 4)
+  discountMode       String          @default("RS") // "RS" = rupees, "GOLD" = pure gold grams
+  discountWeight     Decimal         @default(0) @db.Decimal(14, 4)
   cashReceived       Decimal         @default(0) @db.Decimal(14, 4)
   goldReceived       Decimal         @default(0) @db.Decimal(14, 4)
   balance            Decimal         @default(0) @db.Decimal(14, 4)

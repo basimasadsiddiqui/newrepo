@@ -227,7 +227,7 @@ export default function BulkAddModal({
     const buildQuickRows = (): BulkRow[] => [{
         id: `bulk-quick-${Date.now()}`,
         categoryId: "",
-        description: quickDesc || "Bulk Gold Purchase",
+        description: quickDesc || "Bulk Metal Purchase",
         carat: quickCarat,
         pieces: 1,
         estimatedGoldWeight: quickWeight,
@@ -306,7 +306,7 @@ export default function BulkAddModal({
                 }}>
                     <h3 style={{ color: "var(--text-on-maroon)", display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem" }}>
                         <PackagePlus size={16} />
-                        {categorizeTitle ?? "Bulk Gold Purchase"}
+                        {categorizeTitle ?? "Bulk Metal Purchase"}
                     </h3>
                     <button className="btn btn-icon btn-sm" onClick={onClose} style={{
                         background: "rgba(255,255,255,0.1)",

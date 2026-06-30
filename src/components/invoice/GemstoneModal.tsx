@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Gem, Settings } from "lucide-react";
 import { loadGemstonePresets, type GemstonePreset } from "@/lib/gemstoneRates";
+import { stoneRowAmount } from "@/shared/utils/stone";
 import type { Category } from "@/types";
 
 type RateBasis = "Per Gram" | "Per Carat" | "Per Piece" | "Per Cent" | "Lumpsum";
@@ -39,13 +40,7 @@ function mkRow(): StoneRow {
 const sel = (e: React.FocusEvent<HTMLInputElement>) => e.target.select();
 
 function calcAmount(r: StoneRow): number {
-    const wG  = r.unit === "ct" ? r.value * 0.2 : r.value;
-    const wCt = r.unit === "g"  ? r.value / 0.2 : r.value;
-    if (r.rateBasis === "Per Carat") return wCt * r.rate;
-    if (r.rateBasis === "Per Cent")  return wCt * 100 * r.rate;
-    if (r.rateBasis === "Per Gram")  return wG  * r.rate;
-    if (r.rateBasis === "Per Piece") return r.pieces * r.rate;
-    return r.rate; // Lumpsum
+    return stoneRowAmount(r);
 }
 
 export default function GemstoneModal({ isOpen, onClose, onConfirm, categories = [] }: GemstoneModalProps) {
@@ -196,7 +191,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm, categories =
                     <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
                         Add New Stone / Gem
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1.8fr 0.5fr 0.9fr 0.7fr 0.8fr 0.8fr auto", gap: 6, alignItems: "end" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.8fr 0.5fr 0.9fr 0.7fr 0.8fr 0.8fr", gap: 6, alignItems: "end" }}>
                         {/* Type */}
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.7rem" }}>Stone / Gem Type</label>
@@ -278,17 +273,8 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm, categories =
                                 })()}
                             </div>
                         </div>
-                        {/* Add button */}
-                        <button onClick={addDraft} style={{
-                            height: 34, padding: "0 14px", border: "none", borderRadius: 6,
-                            background: "var(--maroon)", color: "white", cursor: "pointer",
-                            fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 5,
-                            whiteSpace: "nowrap", marginTop: 18,
-                        }}>
-                            <Plus size={13} /> Add
-                        </button>
                     </div>
-                    {/* Tag Caption / Detail (for printed tags) */}
+                    {/* Tag Caption / Detail (for printed tags) — Add button comes AFTER details */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.7rem" }}>Tag Caption</label>
@@ -311,6 +297,17 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm, categories =
                                 style={{ fontSize: "0.82rem" }}
                             />
                         </div>
+                    </div>
+                    {/* Add button — placed after all detail fields */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                        <button onClick={addDraft} style={{
+                            height: 34, padding: "0 18px", border: "none", borderRadius: 6,
+                            background: "var(--maroon)", color: "white", cursor: "pointer",
+                            fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 5,
+                            whiteSpace: "nowrap",
+                        }}>
+                            <Plus size={13} /> Add
+                        </button>
                     </div>
                 </div>
 

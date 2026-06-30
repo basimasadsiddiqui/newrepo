@@ -271,12 +271,17 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           setPartyId(inv.partyId || "");
           setPartyName(inv.partyName || "");
           setPartyMobile(inv.partyMobile || "");
+          // Money is stored in PKR; if this invoice was entered in a foreign currency,
+          // divide back to the entry currency for display/editing (mirror of save-time ×rate).
+          const loadCr = (inv.currency && inv.currency !== "PKR" && Number(inv.currencyRate) > 0)
+            ? Number(inv.currencyRate) : 1;
+          const fromPkr = (v: unknown) => (Number(v) || 0) / loadCr;
           // Rates & rules
-          setGoldRate(Number(inv.goldRate) || 0);
+          setGoldRate(fromPkr(inv.goldRate));
           setPolishBasis((inv.polishBasis as import("@/lib/calculationEngine").PolishLabourBasis) || "Per Tola");
-          setPolishRate(Number(inv.polishRate) || 2.0);
+          setPolishRate(fromPkr(inv.polishRate) || 2.0);
           setLabourBasis((inv.labourBasis as import("@/lib/calculationEngine").LabourBasis) || "Per Tola");
-          setLabourRate(Number(inv.labourRate) || 1200);
+          setLabourRate(fromPkr(inv.labourRate) || 1200);
           setKaatBasis((inv.kaatBasis as import("@/lib/calculationEngine").KaatBasis) || "Direct Weight");
           setKaatRate(Number(inv.kaatRate) || 0);
           // Purchase-specific
@@ -289,10 +294,14 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           setPartyGoldCarat(Number(inv.customerGoldCarat) || 24);
           setPasaRate(Number(inv.pasaRate) || 0);
           // Summary fields
-          setOtherCharges(Number(inv.otherCharges) || 0);
-          setDiscount(Number(inv.discount) || 0);
-          setCashReceived(Number(inv.cashReceived) || 0);
-          setGoldReceived(Number(inv.goldReceived) || 0);
+          setOtherCharges(fromPkr(inv.otherCharges));
+          setOtherChargesMode(inv.otherChargesMode === "GOLD" ? "GOLD" : "RS");
+          setOtherChargesWeight(Number(inv.otherChargesWeight) || 0); // weight — not converted
+          setDiscount(fromPkr(inv.discount));
+          setDiscountMode(inv.discountMode === "GOLD" ? "GOLD" : "RS");
+          setDiscountWeight(Number(inv.discountWeight) || 0); // weight — not converted
+          setCashReceived(fromPkr(inv.cashReceived));
+          setGoldReceived(Number(inv.goldReceived) || 0); // gold weight — not converted
           setRemarks(inv.remarks || "");
           setPhotos(Array.isArray(inv.photos) ? (inv.photos as string[]) : []);
           // Line items
@@ -312,16 +321,16 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             adjustedGoldWeight: Number(item.adjustedGoldWeight) || 0,
             estimatedGrossWeight: Number(item.estimatedGrossWeight) || 0,
             stoneWeight: Number(item.stoneWeight) || 0,
-            stoneRate: Number(item.stoneRate) || 0,
+            stoneRate: fromPkr(item.stoneRate),
             beadsWeight: Number(item.beadsWeight) || 0,
             diamondWeight: Number(item.diamondWeight) || 0,
-            goldAmount: Number(item.goldAmount) || 0,
-            stoneAmount: Number(item.stoneAmount) || 0,
-            beadsAmount: Number(item.beadsAmount) || 0,
-            diamondAmount: Number(item.diamondAmount) || 0,
-            polishAmount: Number(item.polishAmount) || 0,
-            labourAmount: Number(item.labourAmount) || 0,
-            totalAmount: Number(item.totalAmount) || 0,
+            goldAmount: fromPkr(item.goldAmount),
+            stoneAmount: fromPkr(item.stoneAmount),
+            beadsAmount: fromPkr(item.beadsAmount),
+            diamondAmount: fromPkr(item.diamondAmount),
+            polishAmount: fromPkr(item.polishAmount),
+            labourAmount: fromPkr(item.labourAmount),
+            totalAmount: fromPkr(item.totalAmount),
             imageUrl: (item.imageUrl as string) || null,
             imageUrls: Array.isArray(item.imageUrls) ? (item.imageUrls as string[]) : [],
             guaranteedRatti: Number(item.guaranteedRatti) || 0,
@@ -393,6 +402,12 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   // ── Summary ──
   const [otherCharges, setOtherCharges] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
+  // Charges / discount can be entered as rupees ("RS") or pure gold grams ("GOLD").
+  // When GOLD, the *Weight is the source of truth and the rupee value is derived.
+  const [otherChargesMode, setOtherChargesMode] = useState<"RS" | "GOLD">("RS");
+  const [otherChargesWeight, setOtherChargesWeight] = useState<number>(0);
+  const [discountMode, setDiscountMode] = useState<"RS" | "GOLD">("RS");
+  const [discountWeight, setDiscountWeight] = useState<number>(0);
   const [cashReceived, setCashReceived] = useState<number>(0);
   const [goldReceived, setGoldReceived] = useState<number>(0);
   const [remarks, setRemarks] = useState<string>("");
@@ -408,6 +423,16 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const goldRatePerGram = useMemo(
     () => transactionType === "PURCHASE" ? goldRateToPerGramPakka(goldRate) : goldRateToPerGram(goldRate),
     [goldRate, transactionType]
+  );
+
+  // Rupee-equivalent of charges/discount: in GOLD mode it's weight(g) × gold rate/g
+  const otherChargesRs = useMemo(
+    () => otherChargesMode === "GOLD" ? otherChargesWeight * goldRatePerGram : otherCharges,
+    [otherChargesMode, otherChargesWeight, otherCharges, goldRatePerGram]
+  );
+  const discountRs = useMemo(
+    () => discountMode === "GOLD" ? discountWeight * goldRatePerGram : discount,
+    [discountMode, discountWeight, discount, goldRatePerGram]
   );
 
   // Auto-generate receipt number for new invoices
@@ -682,8 +707,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         totalAmount: item.totalAmount,
         estimatedGoldWeight: item.estimatedGoldWeight,
       })),
-      otherCharges,
-      discount,
+      otherCharges: otherChargesRs,
+      discount: discountRs,
       cashReceived,
       goldReceived,
       customerGoldWeight: partyGoldWeight,
@@ -691,7 +716,14 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       goldRatePerGram,
       pasaPercent: pasaRate,
     });
-  }, [items, otherCharges, discount, cashReceived, goldReceived, partyGoldWeight, partyGoldCarat, goldRatePerGram, pasaRate]);
+  }, [items, otherChargesRs, discountRs, cashReceived, goldReceived, partyGoldWeight, partyGoldCarat, goldRatePerGram, pasaRate]);
+
+  // Total Pure (adjusted) Gold Weight across all added items — for the purchase
+  // summary, which shows Total Gold Weight followed by Pure Gold Weight.
+  const totalPureGoldWeight = useMemo(
+    () => items.reduce((sum, item) => sum + (Number(item.adjustedGoldWeight) || 0), 0),
+    [items]
+  );
 
   // Use the same weight that is displayed in the rules panel:
   // If user is currently editing an item, show pasa for that item's weight;
@@ -805,8 +837,21 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
     setPartyMobile(mobile);
   }, []);
 
+  // Numeric item-form fields that must never be negative (client: "Don't allow minus entry")
+  const NON_NEGATIVE_ITEM_FIELDS = useMemo(
+    () => new Set<keyof ItemEntryFormData>([
+      "carat", "pieces", "estimatedGoldWeight", "stoneWeight", "stoneRate",
+      "stoneAmount", "beadsWeight", "beadsAmount", "diamondWeight", "diamondAmount",
+    ]),
+    []
+  );
+
   const handleItemFormChange = useCallback(
     (field: keyof ItemEntryFormData, value: unknown) => {
+      // Clamp negatives on numeric fields so a typed/pasted "-" can never feed a minus total
+      if (NON_NEGATIVE_ITEM_FIELDS.has(field) && typeof value === "number") {
+        value = Math.max(0, value);
+      }
       setItemForm((prev) => ({ ...prev, [field]: value }));
 
       // Auto-open Diamond dialog when category matches "Diamond" in Purchase mode
@@ -825,7 +870,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         }
       }
     },
-    [transactionType, categories]
+    [transactionType, categories, NON_NEGATIVE_ITEM_FIELDS]
   );
 
   const handleAddItem = useCallback(async () => {
@@ -939,7 +984,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         guaranteedRatti: (editingItemIndex !== null ? items[editingItemIndex]?.guaranteedRatti : undefined) ?? 0,
         inventoryItemId: itemForm.inventoryItemId || null,
         metalTypeId: itemForm.metalTypeId || null,
-        metalName: itemForm.metalName || null,
+        // "Auto" (or unset) resolves to Gold when persisted
+        metalName: (!itemForm.metalName || itemForm.metalName === "Auto") ? "Gold" : itemForm.metalName,
       };
 
       if (editingItemIndex !== null) {
@@ -951,12 +997,21 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         toast.success("Item added");
       }
       // Purchase: keep rates/category/carat sticky — only clear weight for next entry
-      if (transactionType === "PURCHASE" && editingItemIndex === null) {
+      const wasStickyPurchase = transactionType === "PURCHASE" && editingItemIndex === null;
+      if (wasStickyPurchase) {
         setItemForm(prev => purchaseStickyReset(prev));
       } else {
         setItemForm(DEFAULT_ITEM_FORM);
       }
       setDiamondEntries([]);
+      // Fast data entry: refocus so the next item can be keyed without the mouse.
+      // Purchase keeps rates sticky → jump straight to the weight field.
+      setTimeout(() => {
+        const sel = wasStickyPurchase ? '[data-fast-focus="weight"]' : '[data-fast-focus="first"]';
+        const el = document.querySelector<HTMLElement>(sel)
+          || document.querySelector<HTMLElement>('[data-fast-focus]');
+        el?.focus();
+      }, 0);
     } catch (error) {
       console.error("handleAddItem error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to add item");
@@ -1080,8 +1135,12 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       partyGoldWeight,
       partyGoldCarat,
       pasaRate,
-      otherCharges,
-      discount,
+      otherCharges: otherChargesRs,
+      otherChargesMode,
+      otherChargesWeight,
+      discount: discountRs,
+      discountMode,
+      discountWeight,
       cashReceived,
       goldReceived,
       remarks,
@@ -1113,7 +1172,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       })),
       photos, // Include photos
     };
-  }, [receiptNo, date, dueDate, rateType, transactionType, partyId, partyName, partyMobile, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, supplierInvoiceNo, currency, currencyRate, intlOunceRate, partyGoldWeight, partyGoldCarat, pasaRate, otherCharges, discount, cashReceived, goldReceived, remarks, items, photos]);
+  }, [receiptNo, date, dueDate, rateType, transactionType, partyId, partyName, partyMobile, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, supplierInvoiceNo, currency, currencyRate, intlOunceRate, partyGoldWeight, partyGoldCarat, pasaRate, otherChargesRs, otherChargesMode, otherChargesWeight, discountRs, discountMode, discountWeight, cashReceived, goldReceived, remarks, items, photos]);
 
   // ── Core save-to-DB helper (returns saved invoice ID, does NOT clear local state) ──
   const saveToDb = useCallback(async (opts?: { silent?: boolean }): Promise<string | null> => {
@@ -1394,6 +1453,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         labourRate,
         kaatBasis,
         kaatRate,
+        rateType,
+        intlOunceRate,
+        currency,
         photos,
         visibleColumns,
       });
@@ -1402,7 +1464,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       console.error('InvoiceMain: PDF generation error', err);
       toast.error('PDF generation failed — check console');
     }
-  }, [orderNumber, date, receiptNo, transactionType, partyName, partyMobile, items, invoiceSummary, otherCharges, discount, partyGoldValue, pasaDeduction, cashReceived, goldReceived, remarks, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, photos, saveToDb]);
+  }, [orderNumber, date, receiptNo, transactionType, partyName, partyMobile, items, invoiceSummary, otherCharges, discount, partyGoldValue, pasaDeduction, cashReceived, goldReceived, remarks, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, rateType, intlOunceRate, currency, photos, saveToDb]);
   const handleSendWhatsApp = useCallback(() => { toast("WhatsApp — requires API key", { icon: "💬" }); }, []);
   const handleCancelOrder = useCallback(() => { setStatus("CANCELLED"); toast.error("Invoice cancelled"); }, []);
 
@@ -1607,10 +1669,17 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       {/* ── Row 4: Invoice Summary (full width) ── */}
       <InvoiceSummary
         transactionType={transactionType}
+        currency={currency}
         totalGoldWeight={invoiceSummary.totalGoldWeight}
+        totalPureGoldWeight={totalPureGoldWeight}
         totalAmount={invoiceSummary.totalAmount}
         otherCharges={otherCharges}
         discount={discount}
+        otherChargesMode={otherChargesMode}
+        otherChargesWeight={otherChargesWeight}
+        discountMode={discountMode}
+        discountWeight={discountWeight}
+        goldRatePerGram={goldRatePerGram}
         customerGoldValue={partyGoldValue}
         pasaDeduction={pasaDeduction}
         cashReceived={cashReceived}
@@ -1619,6 +1688,10 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         remarks={remarks}
         onOtherChargesChange={setOtherCharges}
         onDiscountChange={setDiscount}
+        onOtherChargesModeChange={setOtherChargesMode}
+        onOtherChargesWeightChange={setOtherChargesWeight}
+        onDiscountModeChange={setDiscountMode}
+        onDiscountWeightChange={setDiscountWeight}
         onCashReceivedChange={setCashReceived}
         onGoldReceivedChange={setGoldReceived}
         onRemarksChange={setRemarks}

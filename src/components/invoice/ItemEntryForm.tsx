@@ -2,7 +2,7 @@
 
 import { Plus, RotateCcw, Package, X, Gem } from "lucide-react";
 import type { Category, ItemEntryFormData, MetalTypeOption } from "@/types";
-import { type KaatBasis, type LabourBasis, calcLabourAmount, gramsToTolaMashaRatti, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
+import { type KaatBasis, type LabourBasis, calcLabourAmount } from "@/lib/calculationEngine";
 import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
 import { useRef, useState, type ChangeEvent } from "react";
 import StockSelectionModal from "./StockSelectionModal";
@@ -125,8 +125,11 @@ export default function ItemEntryForm({
     const shortcuts = getShortcuts(categories, formData.categoryId, customCategoryName);
     const listId = "item-desc-list";
 
-    // Base metal name (Gold/Silver/…); carat is entered separately. Defaults to Gold.
-    const selectedMetal = formData.metalName || metals[0] || "Gold";
+    // Base metal name (Gold/Silver/…); carat is entered separately.
+    // New items default to "Auto", which resolves to Gold when saved.
+    const selectedMetal = formData.metalName || "Auto";
+    // Label/weight always shows a concrete metal — "Auto" reads as Gold.
+    const metalLabel = selectedMetal === "Auto" ? "Gold" : selectedMetal;
 
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
@@ -238,6 +241,7 @@ export default function ItemEntryForm({
                         <label className="form-label">Metal</label>
                         <div style={{ display: "flex", gap: 4 }}>
                             <select className="form-select"
+                                data-fast-focus="first"
                                 value={selectedMetal}
                                 onChange={e => {
                                     const v = e.target.value;
@@ -250,17 +254,18 @@ export default function ItemEntryForm({
                                 }}
                                 disabled={isDiamondCategory}
                                 style={{ flex: 1, ...(isDiamondCategory ? { opacity: 0.5 } : {}) }}>
+                                <option value="Auto">Auto (Gold)</option>
                                 {metals.map(m => (
                                     <option key={m} value={m}>{m}</option>
                                 ))}
-                                {!metals.some(m => m.toLowerCase() === selectedMetal.toLowerCase()) && (
+                                {selectedMetal !== "Auto" && !metals.some(m => m.toLowerCase() === selectedMetal.toLowerCase()) && (
                                     <option value={selectedMetal}>{selectedMetal}</option>
                                 )}
                                 <option value="__add__">+ Add metal…</option>
                             </select>
                             <button type="button" className="btn btn-ghost btn-icon"
                                 title={`Remove "${selectedMetal}" from the metal list`}
-                                disabled={isDiamondCategory || metals.length <= 1}
+                                disabled={isDiamondCategory || selectedMetal === "Auto" || metals.length <= 1}
                                 onClick={() => {
                                     if (window.confirm(`Remove "${selectedMetal}" from the metal list?`)) {
                                         onRemoveMetal?.(selectedMetal);
@@ -327,9 +332,9 @@ export default function ItemEntryForm({
                             Rate
                             {transactionType === "PURCHASE" && <span style={{ marginLeft: 4, fontSize: "0.55rem", color: "var(--text-muted)", fontWeight: 400 }}>(edit)</span>}
                         </label>
-                        <input className="form-input" type="number" value={goldRate}
+                        <input className="form-input" type="number" min={0} value={goldRate}
                             readOnly={transactionType !== "PURCHASE" || !onGoldRateChange}
-                            onChange={e => onGoldRateChange?.(Number(e.target.value))}
+                            onChange={e => onGoldRateChange?.(Math.max(0, Number(e.target.value)))}
                             style={{
                                 fontWeight: 700,
                                 color: "var(--gold-dark)",
@@ -343,7 +348,7 @@ export default function ItemEntryForm({
                         <label className="form-label">Carat (K)</label>
                         <input className="form-input" type="number" min={1} max={24} step={0.001}
                             value={formData.carat}
-                            onChange={e => onFormChange("carat", Number(e.target.value))}
+                            onChange={e => onFormChange("carat", Math.max(0, Number(e.target.value)))}
                             disabled={isDiamondCategory}
                             style={isDiamondCategory ? { opacity: 0.5 } : {}} />
                     </div>
@@ -353,7 +358,7 @@ export default function ItemEntryForm({
                         <label className="form-label">Pcs</label>
                         <input className="form-input" type="number" min={1}
                             value={formData.pieces}
-                            onChange={e => onFormChange("pieces", Number(e.target.value))}
+                            onChange={e => onFormChange("pieces", Math.max(0, Number(e.target.value)))}
                             disabled={isDiamondCategory}
                             style={isDiamondCategory ? { opacity: 0.5 } : {}} />
                     </div>
@@ -377,7 +382,7 @@ export default function ItemEntryForm({
                         </label>
                         <input className="form-input" type="number" min={0} step={0.5}
                             value={gRatti || ""}
-                            onChange={e => setGRatti(Number(e.target.value))}
+                            onChange={e => setGRatti(Math.max(0, Number(e.target.value)))}
                             placeholder="e.g. 12"
                             style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
                         />
@@ -407,19 +412,20 @@ export default function ItemEntryForm({
                                     <option value="Ratti Kaat">Ratti</option>
                                     <option value="Pasa">Pasa</option>
                                     <option value="Purity %">Purity %</option>
+                                    <option value="Lump Sum">Lump Sum (g)</option>
                                 </select>
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label" style={{ fontSize: "0.68rem" }}>
-                                    @ {kaatBasis === "Ratti Kaat" ? "Ratti" : kaatBasis === "Purity %" ? "Purity" : "—"}
+                                    @ {kaatBasis === "Ratti Kaat" ? "Ratti" : kaatBasis === "Purity %" ? "Purity" : kaatBasis === "Lump Sum" ? "Grams" : "—"}
                                 </label>
-                                <input className="form-input" type="number" min={0} step={kaatBasis === "Purity %" ? 0.001 : 0.1}
+                                <input className="form-input" type="number" min={0} step={kaatBasis === "Purity %" ? 0.001 : kaatBasis === "Lump Sum" ? 0.001 : 0.1}
                                     max={kaatBasis === "Purity %" ? 1 : undefined}
                                     style={{ height: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.85rem", opacity: kaatBasis === "Pasa" ? 0.4 : 1 }}
                                     disabled={kaatBasis === "Pasa"}
                                     value={kaatRate ?? ""}
-                                    onChange={e => onKaatRateChange?.(Number(e.target.value))}
-                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "e.g. .88" : "e.g. 2"} />
+                                    onChange={e => onKaatRateChange?.(Math.max(0, Number(e.target.value)))}
+                                    placeholder={kaatBasis === "Pasa" ? "—" : kaatBasis === "Purity %" ? "e.g. .88" : kaatBasis === "Lump Sum" ? "e.g. 0.500" : "e.g. 2"} />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label" style={{ fontSize: "0.68rem", color: "var(--danger)" }}>Kaat Wt</label>
@@ -447,7 +453,7 @@ export default function ItemEntryForm({
                                 <input className="form-input" type="number" min={0} step={1}
                                     style={{ height: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.85rem" }}
                                     value={labourRate ?? ""}
-                                    onChange={e => onLabourRateChange?.(Number(e.target.value))}
+                                    onChange={e => onLabourRateChange?.(Math.max(0, Number(e.target.value)))}
                                     placeholder="e.g. 1000" />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -482,31 +488,8 @@ export default function ItemEntryForm({
                                 </div>
                             </div>
                         )}
-                        {/* Tola / Masha / Ratti breakdown of Pure Wt */}
-                        {pureWeightPreview > 0 && (() => {
-                            const tmr = gramsToTolaMashaRatti(pureWeightPreview);
-                            return (
-                                <div style={{ marginTop: 6, background: "rgba(92,10,10,0.04)", borderRadius: 5, padding: "4px 6px", textAlign: "center" }}>
-                                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.75rem", color: "var(--maroon)" }}>
-                                        {tmr.tola} Tola {tmr.masha} Masha {tmr.ratti.toFixed(2)} Ratti
-                                    </span>
-                                </div>
-                            );
-                        })()}
-                    </div>
-                )}
-
-                {/* Gold Weight — Pakka / Kacha Tola conversion */}
-                {transactionType === "PURCHASE" && formData.estimatedGoldWeight > 0 && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, padding: "4px 8px", marginBottom: 6, background: "rgba(201,168,76,0.08)", borderRadius: 5 }}>
-                        <div>
-                            <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola (÷12.150)</div>
-                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--maroon)" }}>{gramsToPakkaTola(formData.estimatedGoldWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: "0.58rem", color: "var(--gold-dark)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola (÷11.664)</div>
-                            <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.82rem", color: "var(--text-secondary)" }}>{gramsToKachaTola(formData.estimatedGoldWeight).toFixed(4)}<span style={{ fontSize: "0.62rem", fontWeight: 500, marginLeft: 3 }}>tola</span></div>
-                        </div>
+                        {/* Tola/Masha/Ratti + Pakka/Kacha breakdown removed for purchase —
+                            client wants pure gold shown in plain grams only. */}
                     </div>
                 )}
 
@@ -559,8 +542,9 @@ export default function ItemEntryForm({
 
                     {/* Gold Weight — label reflects the selected metal */}
                     <div className="form-group">
-                        <label className="form-label">{selectedMetal} Wt (g)</label>
+                        <label className="form-label">{metalLabel} Wt (g)</label>
                         <input className="form-input" type="number" min={0} step={0.001}
+                            data-fast-focus="weight"
                             value={formData.estimatedGoldWeight}
                             onChange={e => onFormChange("estimatedGoldWeight", Number(e.target.value))}
                             disabled={isDiamondCategory}

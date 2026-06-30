@@ -29,14 +29,101 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatWeight } from "@/lib/utils";
 import { gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
+import { getCurrencySymbol } from "@/shared/utils/currency";
+
+/**
+ * A summary row whose value can be entered either as rupees ("RS") or as pure
+ * gold grams ("GOLD"). The Rs/Gold selector + gram entry is purchase-only; on a
+ * sale invoice it falls back to a plain rupee input.
+ */
+function renderAmountOrWeightField(opts: {
+    label: string;
+    transactionType: "SALE" | "PURCHASE";
+    currency: string;
+    mode: "RS" | "GOLD";
+    rupees: number;
+    weight: number;
+    goldRatePerGram: number;
+    onRupeesChange: (value: number) => void;
+    onModeChange?: (mode: "RS" | "GOLD") => void;
+    onWeightChange?: (value: number) => void;
+}) {
+    const { label, transactionType, currency, mode, rupees, weight, goldRatePerGram,
+        onRupeesChange, onModeChange, onWeightChange } = opts;
+    const sym = getCurrencySymbol(currency);
+
+    const inputStyle = { width: "120px", height: "30px", fontSize: "0.75rem", textAlign: "right" as const };
+    const allowGoldMode = transactionType === "PURCHASE" && !!onModeChange && !!onWeightChange;
+    const isGold = allowGoldMode && mode === "GOLD";
+
+    return (
+        <div className="summary-row">
+            <span className="label" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {label}
+                {/* Rupee equivalent of a gold-weight charge, so the money impact is visible */}
+                {isGold && weight > 0 && goldRatePerGram > 0 && (
+                    <span style={{ fontSize: "0.6rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                        = {sym} {formatCurrency(weight * goldRatePerGram)}
+                    </span>
+                )}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                {allowGoldMode && (
+                    <select
+                        className="form-select"
+                        value={mode}
+                        onChange={(e) => onModeChange!(e.target.value as "RS" | "GOLD")}
+                        style={{ height: "30px", fontSize: "0.7rem", width: "68px" }}
+                        title="Enter this value in rupees or in pure gold grams"
+                    >
+                        <option value="RS">Rs</option>
+                        <option value="GOLD">Gold g</option>
+                    </select>
+                )}
+                {isGold ? (
+                    <input
+                        className="form-input"
+                        type="number"
+                        step="0.001"
+                        min={0}
+                        value={weight || ""}
+                        placeholder="grams"
+                        onChange={(e) => onWeightChange!(Math.max(0, Number(e.target.value)))}
+                        style={inputStyle}
+                    />
+                ) : (
+                    <input
+                        className="form-input"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={rupees}
+                        onChange={(e) => onRupeesChange(Math.max(0, Number(e.target.value)))}
+                        style={inputStyle}
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
 
 interface InvoiceSummaryProps {
     transactionType?: "SALE" | "PURCHASE";
+    /** Selected currency code (purchase). Only swaps the displayed symbol. */
+    currency?: string;
     /** All monetary and weight totals */
     totalGoldWeight: number;
+    totalPureGoldWeight?: number;
     totalAmount: number;
     otherCharges: number;
     discount: number;
+    /** Rs/Gold mode for charges & discount (purchase). Defaults to rupees. */
+    otherChargesMode?: "RS" | "GOLD";
+    otherChargesWeight?: number;
+    discountMode?: "RS" | "GOLD";
+    discountWeight?: number;
+    /** Gold rate per gram — used to show the rupee equivalent of a gold-weight charge. */
+    goldRatePerGram?: number;
     customerGoldValue: number;
     pasaDeduction: number;
     cashReceived: number;
@@ -47,6 +134,10 @@ interface InvoiceSummaryProps {
     // ── Callbacks ──
     onOtherChargesChange: (value: number) => void;
     onDiscountChange: (value: number) => void;
+    onOtherChargesModeChange?: (mode: "RS" | "GOLD") => void;
+    onOtherChargesWeightChange?: (value: number) => void;
+    onDiscountModeChange?: (mode: "RS" | "GOLD") => void;
+    onDiscountWeightChange?: (value: number) => void;
     onCashReceivedChange: (value: number) => void;
     onGoldReceivedChange: (value: number) => void;
     onRemarksChange: (value: string) => void;
@@ -61,10 +152,17 @@ interface InvoiceSummaryProps {
 
 export default function InvoiceSummary({
     transactionType = "SALE",
+    currency = "PKR",
     totalGoldWeight,
+    totalPureGoldWeight = 0,
     totalAmount,
     otherCharges,
     discount,
+    otherChargesMode = "RS",
+    otherChargesWeight = 0,
+    discountMode = "RS",
+    discountWeight = 0,
+    goldRatePerGram = 0,
     customerGoldValue,
     pasaDeduction,
     cashReceived,
@@ -73,6 +171,10 @@ export default function InvoiceSummary({
     remarks,
     onOtherChargesChange,
     onDiscountChange,
+    onOtherChargesModeChange,
+    onOtherChargesWeightChange,
+    onDiscountModeChange,
+    onDiscountWeightChange,
     onCashReceivedChange,
     onGoldReceivedChange,
     onRemarksChange,
@@ -84,6 +186,9 @@ export default function InvoiceSummary({
     onExit,
     onPayment,
 }: InvoiceSummaryProps) {
+    // Amounts shown here are already in the entry currency (user enters foreign,
+    // PKR conversion happens at save) — so we only swap the symbol for display.
+    const sym = getCurrencySymbol(currency);
     return (
         <div
             style={{
@@ -115,17 +220,20 @@ export default function InvoiceSummary({
                             flexWrap: "wrap",
                         }}
                     >
-                        <button className="btn btn-ghost" onClick={onSaveDraft}>
+                        <button className="btn btn-ghost" onClick={onSaveDraft}
+                            title="Save as an editable draft — you can re-open and change it later (not final)">
                             <Save size={16} />
                             Save Draft
                         </button>
-                        <button className="btn btn-primary" onClick={onFinalize}>
+                        <button className="btn btn-primary" onClick={onFinalize}
+                            title="Finalize and lock this invoice as a completed record">
                             <CheckCircle size={16} />
                             Finalize Invoice
                         </button>
-                        <button className="btn btn-secondary" onClick={onGeneratePdf}>
+                        <button className="btn btn-secondary" onClick={onGeneratePdf}
+                            title="Save the invoice and open a printable PDF">
                             <FileDown size={16} />
-                            Generate PDF
+                            Save &amp; Print
                         </button>
                         <button
                             className="btn btn-ghost"
@@ -169,76 +277,79 @@ export default function InvoiceSummary({
                         <span className="value">{formatWeight(totalGoldWeight)} g</span>
                     </div>
 
-                    {/* Tola conversions */}
-                    {totalGoldWeight > 0 && (
-                        <div style={{
-                            display: "grid", gridTemplateColumns: "1fr 1fr",
-                            gap: "6px", margin: "2px 0 6px",
-                            padding: "6px 8px",
-                            background: "rgba(201,168,76,0.08)",
-                            border: "1px solid var(--gold-light)",
-                            borderRadius: "6px",
-                        }}>
-                            <div>
-                                <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola</div>
-                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 1 }}>÷ 12.150 g</div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--maroon)" }}>
-                                    {gramsToPakkaTola(totalGoldWeight).toFixed(4)} <span style={{ fontSize: "0.65rem", fontWeight: 500 }}>tola</span>
-                                </div>
-                            </div>
-                            <div>
-                                <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola</div>
-                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 1 }}>÷ 11.664 g</div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--text-secondary)" }}>
-                                    {gramsToKachaTola(totalGoldWeight).toFixed(4)} <span style={{ fontSize: "0.65rem", fontWeight: 500 }}>tola</span>
-                                </div>
-                            </div>
+                    {/* Pure Gold Weight (PURCHASE) — client wants plain grams,
+                        not Tola/Masha/Ratti, directly under Total Gold Weight. */}
+                    {transactionType === "PURCHASE" ? (
+                        <div className="summary-row">
+                            <span className="label">Pure Gold Weight</span>
+                            <span className="value" style={{ color: "var(--maroon)" }}>
+                                {formatWeight(totalPureGoldWeight)} g
+                            </span>
                         </div>
+                    ) : (
+                        /* SALE keeps the traditional Pakka/Kacha Tola breakdown */
+                        totalGoldWeight > 0 && (
+                            <div style={{
+                                display: "grid", gridTemplateColumns: "1fr 1fr",
+                                gap: "6px", margin: "2px 0 6px",
+                                padding: "6px 8px",
+                                background: "rgba(201,168,76,0.08)",
+                                border: "1px solid var(--gold-light)",
+                                borderRadius: "6px",
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pakka Tola</div>
+                                    <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 1 }}>÷ 12.150 g</div>
+                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--maroon)" }}>
+                                        {gramsToPakkaTola(totalGoldWeight).toFixed(4)} <span style={{ fontSize: "0.65rem", fontWeight: 500 }}>tola</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Kacha Tola</div>
+                                    <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 1 }}>÷ 11.664 g</div>
+                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.9rem", color: "var(--text-secondary)" }}>
+                                        {gramsToKachaTola(totalGoldWeight).toFixed(4)} <span style={{ fontSize: "0.65rem", fontWeight: 500 }}>tola</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )
                     )}
 
                     {/* Total Amount */}
                     <div className="summary-row">
                         <span className="label">Total Amount</span>
                         <span className="value" style={{ color: "var(--maroon)" }}>
-                            Rs. {formatCurrency(totalAmount)}
+                            {sym} {formatCurrency(totalAmount)}
                         </span>
                     </div>
 
                     {/* Other Charges */}
-                    <div className="summary-row">
-                        <span className="label">Other Charges</span>
-                        <input
-                            className="form-input"
-                            type="number"
-                            step="0.01"
-                            value={otherCharges}
-                            onChange={(e) => onOtherChargesChange(Number(e.target.value))}
-                            style={{
-                                width: "130px",
-                                height: "30px",
-                                fontSize: "0.75rem",
-                                textAlign: "right",
-                            }}
-                        />
-                    </div>
+                    {renderAmountOrWeightField({
+                        label: "Other Charges",
+                        transactionType,
+                        currency,
+                        mode: otherChargesMode,
+                        rupees: otherCharges,
+                        weight: otherChargesWeight,
+                        goldRatePerGram,
+                        onRupeesChange: onOtherChargesChange,
+                        onModeChange: onOtherChargesModeChange,
+                        onWeightChange: onOtherChargesWeightChange,
+                    })}
 
                     {/* Discount */}
-                    <div className="summary-row">
-                        <span className="label">Discount</span>
-                        <input
-                            className="form-input"
-                            type="number"
-                            step="0.01"
-                            value={discount}
-                            onChange={(e) => onDiscountChange(Number(e.target.value))}
-                            style={{
-                                width: "130px",
-                                height: "30px",
-                                fontSize: "0.75rem",
-                                textAlign: "right",
-                            }}
-                        />
-                    </div>
+                    {renderAmountOrWeightField({
+                        label: "Discount",
+                        transactionType,
+                        currency,
+                        mode: discountMode,
+                        rupees: discount,
+                        weight: discountWeight,
+                        goldRatePerGram,
+                        onRupeesChange: onDiscountChange,
+                        onModeChange: onDiscountModeChange,
+                        onWeightChange: onDiscountWeightChange,
+                    })}
 
                     {/* Old Gold Value */}
                     {customerGoldValue > 0 && (
@@ -250,7 +361,7 @@ export default function InvoiceSummary({
                                 className="value"
                                 style={{ color: "var(--success)" }}
                             >
-                                - Rs. {formatCurrency(customerGoldValue)}
+                                - {sym} {formatCurrency(customerGoldValue)}
                             </span>
                         </div>
                     )}
@@ -265,7 +376,7 @@ export default function InvoiceSummary({
                                 className="value"
                                 style={{ color: "var(--warning)" }}
                             >
-                                - Rs. {formatCurrency(pasaDeduction)}
+                                - {sym} {formatCurrency(pasaDeduction)}
                             </span>
                         </div>
                     )}
@@ -277,8 +388,9 @@ export default function InvoiceSummary({
                             className="form-input"
                             type="number"
                             step="0.01"
+                            min={0}
                             value={cashReceived}
-                            onChange={(e) => onCashReceivedChange(Number(e.target.value))}
+                            onChange={(e) => onCashReceivedChange(Math.max(0, Number(e.target.value)))}
                             style={{
                                 width: "130px",
                                 height: "30px",
@@ -295,8 +407,9 @@ export default function InvoiceSummary({
                             className="form-input"
                             type="number"
                             step="0.001"
+                            min={0}
                             value={goldReceived}
-                            onChange={(e) => onGoldReceivedChange(Number(e.target.value))}
+                            onChange={(e) => onGoldReceivedChange(Math.max(0, Number(e.target.value)))}
                             style={{
                                 width: "130px",
                                 height: "30px",
@@ -314,7 +427,7 @@ export default function InvoiceSummary({
                                 className={`value ${balance <= 0 ? "paid" : ""}`}
                                 style={{ fontSize: "1.25rem" }}
                             >
-                                Rs. {formatCurrency(Math.abs(balance))}
+                                {sym} {formatCurrency(Math.abs(balance))}
                                 {balance <= 0 && balance !== 0 && (
                                     <span style={{ fontSize: "0.6875rem", marginLeft: "4px", fontWeight: 400 }}>
                                         (overpaid)

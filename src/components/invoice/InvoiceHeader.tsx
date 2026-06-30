@@ -378,10 +378,17 @@ export default function InvoiceHeader({
                         </div>
                     )}
 
-                    {/* Intl Ounce Rate - Purchase Only */}
+                    {/* Intl Ounce Rate - Purchase Only. When Rate Type = Fixed this is the
+                        locked-in rate that prints on the report (manual entry for now). */}
                     {!isSale && onIntlOunceRateChange && (
                         <div className="form-group">
-                            <label className="form-label">Intl Ounce Rate</label>
+                            <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                {rateType === "FIXED" ? "Fixed Ounce Rate" : "Intl Ounce Rate"}
+                                {rateType === "FIXED" && (
+                                    <span title="Fixed rate — saved on the invoice and shown in the report. Does not auto-update."
+                                        style={{ fontSize: "0.6rem", color: "var(--gold-dark)", fontWeight: 700 }}>🔒</span>
+                                )}
+                            </label>
                             <input
                                 className="form-input"
                                 type="number"
@@ -390,6 +397,7 @@ export default function InvoiceHeader({
                                 onChange={(e) => onIntlOunceRateChange(e.target.value)}
                                 style={{ height: "32px" }}
                                 placeholder="$ / oz"
+                                title={rateType === "FIXED" ? "Fixed ounce rate — locked onto this invoice and printed in the report" : "Reference international ounce rate"}
                             />
                         </div>
                     )}
@@ -605,35 +613,37 @@ export default function InvoiceHeader({
                         />
                     </div>
 
-                    {/* Balance */}
-                    <div className="form-group">
-                        <label className="form-label">Balance Amount</label>
-                        <input
-                            className="form-input"
-                            value={
-                                partyId
-                                    ? `Rs. ${Number(partyBalance).toLocaleString()}`
-                                    : "—"
-                            }
-                            readOnly
-                            style={{
-                                background: "var(--cream)",
-                                fontFamily: "var(--font-mono)",
-                                fontWeight: 700,
-                                color:
-                                    Number(partyBalance) > 0
-                                        ? "var(--danger)"
-                                        : Number(partyBalance) < 0
-                                            ? "var(--success)"
-                                            : "var(--text-primary)",
-                                height: "32px",
-                            }}
-                        />
-                    </div>
+                    {/* Balance Amount — hidden on purchase per client request ("remove for now") */}
+                    {isSale && (
+                        <div className="form-group">
+                            <label className="form-label">Balance Amount</label>
+                            <input
+                                className="form-input"
+                                value={
+                                    partyId
+                                        ? `Rs. ${Number(partyBalance).toLocaleString()}`
+                                        : "—"
+                                }
+                                readOnly
+                                style={{
+                                    background: "var(--cream)",
+                                    fontFamily: "var(--font-mono)",
+                                    fontWeight: 700,
+                                    color:
+                                        Number(partyBalance) > 0
+                                            ? "var(--danger)"
+                                            : Number(partyBalance) < 0
+                                                ? "var(--success)"
+                                                : "var(--text-primary)",
+                                    height: "32px",
+                                }}
+                            />
+                        </div>
+                    )}
 
                     {/* Gold Balance */}
                     <div className="form-group">
-                        <label className="form-label">Balance Gold</label>
+                        <label className="form-label">Balance Gold (Pure)</label>
                         <input
                             className="form-input"
                             value={

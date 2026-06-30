@@ -9,6 +9,7 @@ import {
 import type { Category } from "@/types";
 import { calculateLineItem, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
+import { stoneRowAmount } from "@/shared/utils/stone";
 import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
 import { useDescriptionHistory } from "@/hooks/useDescriptionHistory";
 
@@ -36,7 +37,7 @@ export interface BulkRow {
     isBulkPurchase?: boolean;
 }
 
-type LocalKaatBasis = "Ratti Kaat" | "Purity" | "None";
+type LocalKaatBasis = "Ratti Kaat" | "Purity" | "None" | "Lump Sum";
 type StoneRateBasis = "Per Carat" | "Per Gram" | "Per Piece" | "Per Cent" | "Lumpsum";
 type LocalLabourBasis = "Per Tola" | "Per Gram" | "Per Piece" | "Lump Sum";
 
@@ -115,7 +116,7 @@ export default function BulkEntryPanel({
 
     // ── Quick entry state ──
     const [quickDesc, setQuickDesc] = useState("");
-    const [quickMetal, setQuickMetal] = useState("Gold");
+    const [quickMetal, setQuickMetal] = useState("Auto");
     const [quickCategoryId, setQuickCategoryId] = useState("");
     const [quickTagCaption, setQuickTagCaption] = useState("");
     const [quickWeight, setQuickWeight] = useState<number>(0);
@@ -129,8 +130,11 @@ export default function BulkEntryPanel({
     const [editingStoneId, setEditingStoneId] = useState<string | null>(null);
     const [showStoneModal, setShowStoneModal] = useState(false);
 
-    // Base metal name (Gold/Silver/…); carat is entered separately. Defaults to Gold.
-    const quickMetalSel = quickMetal || metals[0] || "Gold";
+    // Base metal name (Gold/Silver/…); carat is entered separately.
+    // Defaults to "Auto", which resolves to Gold when saved.
+    const quickMetalSel = quickMetal || "Auto";
+    // Concrete metal for labels + persistence — "Auto" reads as Gold.
+    const quickMetalResolved = quickMetalSel === "Auto" ? "Gold" : quickMetalSel;
 
     // tag caption autocomplete — suggest category names (e.g. "Ban" → "Bangles")
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
@@ -156,15 +160,7 @@ export default function BulkEntryPanel({
     const totalStoneWeightG  = stoneRows.reduce((sum, r) => sum + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
     const gramStoneRowsTotalG = stoneRows.filter(r => r.unit === "g").reduce((sum, r) => sum + r.value, 0);
     const caratStoneRowsTotalCt = stoneRows.filter(r => r.unit === "ct").reduce((sum, r) => sum + r.value, 0);
-    const totalStoneAmount = stoneRows.reduce((sum, r) => {
-        const wG  = r.unit === "ct" ? r.value * 0.2 : r.value;       // always in grams
-        const wCt = r.unit === "g"  ? r.value / 0.2 : r.value;       // always in carats (1g = 5ct)
-        if (r.rateBasis === "Per Carat") return sum + wCt * r.rate;
-        if (r.rateBasis === "Per Cent")  return sum + wCt * 100 * r.rate;
-        if (r.rateBasis === "Per Gram")  return sum + wG  * r.rate;
-        if (r.rateBasis === "Per Piece") return sum + r.pieces * r.rate;
-        return sum + r.rate; // Lumpsum — flat
-    }, 0);
+    const totalStoneAmount = stoneRows.reduce((sum, r) => sum + stoneRowAmount(r), 0);
     const [quickNotes, setQuickNotes] = useState("");
 
     // ── Kaat — inline with Carat (not in a collapsible, not duplicated) ──
@@ -203,6 +199,9 @@ export default function BulkEntryPanel({
         // Purity: Weight × purity (decimal), e.g. 200 × 0.88 = 176
         if (localKaatBasis === "Purity" && localKaatRate > 0)
             return Math.round(quickWeight * localKaatRate * 1000) / 1000;
+        // Lump Sum: fixed gram/mg cut deducted directly, e.g. 200 − 0.500 = 199.500
+        if (localKaatBasis === "Lump Sum" && localKaatRate > 0)
+            return Math.max(0, Math.round((quickWeight - localKaatRate) * 1000) / 1000);
         // Pasa (None): no deduction
         return null;
     }, [quickWeight, localKaatBasis, localKaatRate]);
@@ -212,7 +211,9 @@ export default function BulkEntryPanel({
     // ── Map local kaat basis to engine KaatBasis ──
     // Pasa and Purity both resolve via carat purity — engine handles with undefined kaatBasis
     const effectiveKaatBasis: KaatBasis | undefined =
-        localKaatBasis === "Ratti Kaat" ? "Ratti Kaat" : undefined;
+        localKaatBasis === "Ratti Kaat" ? "Ratti Kaat"
+        : localKaatBasis === "Lump Sum" ? "Lump Sum"
+        : undefined;
 
     // ── Quick mode calcs ──
     const quickCalc = useMemo(() => {
@@ -253,7 +254,9 @@ export default function BulkEntryPanel({
     const validRows = rows.filter(r => r.estimatedGoldWeight > 0 || r.description.trim());
 
     const update = useCallback((id: string, field: keyof BulkRow, value: unknown) => {
-        setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+        // Clamp negatives on numeric fields (client: "Don't allow minus entry")
+        const v = typeof value === "number" ? Math.max(0, value) : value;
+        setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: v } : r));
     }, []);
 
     const remove = useCallback((id: string) => {
@@ -307,7 +310,7 @@ export default function BulkEntryPanel({
             categoryId: quickCategoryId,
             description: quickDesc || "Bulk Metal Purchase",
             tagCaption: quickTagCaption,
-            metalName: quickMetalSel,
+            metalName: quickMetalResolved,
             carat: quickCarat,
             pieces: quickPieces,
             estimatedGoldWeight: quickWeight,
@@ -362,8 +365,10 @@ export default function BulkEntryPanel({
             ? "var(--success)"
             : "linear-gradient(90deg, var(--gold-dark), var(--gold))";
 
-    const updateStoneRow = (id: string, field: keyof StoneRow, value: unknown) =>
-        setStoneRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+    const updateStoneRow = (id: string, field: keyof StoneRow, value: unknown) => {
+        const v = typeof value === "number" ? Math.max(0, value) : value;
+        setStoneRows(prev => prev.map(r => r.id === id ? { ...r, [field]: v } : r));
+    };
     const removeStoneRow = (id: string) =>
         setStoneRows(prev => prev.filter(r => r.id !== id));
 
@@ -415,7 +420,7 @@ export default function BulkEntryPanel({
                             <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
                                 Add New Stone / Gem
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1.8fr 0.5fr 0.9fr 0.7fr 0.8fr 0.8fr auto", gap: 6, alignItems: "end" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1.8fr 0.5fr 0.9fr 0.7fr 0.8fr 0.8fr", gap: 6, alignItems: "end" }}>
                                 {/* Type */}
                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                     <label className="form-label" style={{ fontSize: "0.7rem" }}>Stone / Gem Type</label>
@@ -495,31 +500,13 @@ export default function BulkEntryPanel({
                                     <label className="form-label" style={{ fontSize: "0.7rem" }}>Amount</label>
                                     <div style={{ height: 34, display: "flex", alignItems: "center", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.82rem", color: "var(--maroon)", paddingLeft: 4 }}>
                                         {(() => {
-                                            const wG  = stoneDraft.unit === "ct" ? stoneDraft.value * 0.2 : stoneDraft.value;
-                                            const wCt = stoneDraft.unit === "g"  ? stoneDraft.value / 0.2 : stoneDraft.value;
-                                            const amt = stoneDraft.rateBasis === "Per Carat" ? wCt * stoneDraft.rate :
-                                                        stoneDraft.rateBasis === "Per Cent"  ? wCt * 100 * stoneDraft.rate :
-                                                        stoneDraft.rateBasis === "Per Gram"  ? wG  * stoneDraft.rate :
-                                                        stoneDraft.rateBasis === "Per Piece" ? stoneDraft.pieces * stoneDraft.rate :
-                                                        stoneDraft.rate;
+                                            const amt = stoneRowAmount(stoneDraft);
                                             return amt > 0 ? `Rs.${amt.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—";
                                         })()}
                                     </div>
                                 </div>
-                                {/* Add button */}
-                                <button onClick={() => {
-                                    setStoneRows(p => [...p, { ...stoneDraft, id: `stone-${Date.now()}-${++stoneCounter}` }]);
-                                    setStoneDraft(mkStoneRow());
-                                }} style={{
-                                    height: 34, padding: "0 14px", border: "none", borderRadius: 6,
-                                    background: "var(--maroon)", color: "white", cursor: "pointer",
-                                    fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 5,
-                                    whiteSpace: "nowrap", marginTop: 18,
-                                }}>
-                                    <Plus size={13} /> Add
-                                </button>
                             </div>
-                            {/* Tag Caption / Detail (for printed tags) */}
+                            {/* Tag Caption / Detail (for printed tags) — Add button comes AFTER details */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                     <label className="form-label" style={{ fontSize: "0.7rem" }}>Tag Caption</label>
@@ -543,6 +530,20 @@ export default function BulkEntryPanel({
                                     />
                                 </div>
                             </div>
+                            {/* Add button — placed after all detail fields */}
+                            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                                <button onClick={() => {
+                                    setStoneRows(p => [...p, { ...stoneDraft, id: `stone-${Date.now()}-${++stoneCounter}` }]);
+                                    setStoneDraft(mkStoneRow());
+                                }} style={{
+                                    height: 34, padding: "0 18px", border: "none", borderRadius: 6,
+                                    background: "var(--maroon)", color: "white", cursor: "pointer",
+                                    fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 5,
+                                    whiteSpace: "nowrap",
+                                }}>
+                                    <Plus size={13} /> Add
+                                </button>
+                            </div>
                         </div>
 
                         {/* ── Stone table (spreadsheet style, each row editable) ── */}
@@ -562,14 +563,7 @@ export default function BulkEntryPanel({
                                     </thead>
                                     <tbody>
                                         {stoneRows.map((sr, idx) => {
-                                            const srWeightG  = sr.unit === "ct" ? sr.value * 0.2 : sr.value;
-                                            const srWeightCt = sr.unit === "g"  ? sr.value / 0.2 : sr.value;
-                                            const srAmount =
-                                                sr.rateBasis === "Per Carat" ? srWeightCt * sr.rate :
-                                                sr.rateBasis === "Per Cent"  ? srWeightCt * 100 * sr.rate :
-                                                sr.rateBasis === "Per Gram"  ? srWeightG  * sr.rate :
-                                                sr.rateBasis === "Per Piece" ? sr.pieces  * sr.rate :
-                                                sr.rate;
+                                            const srAmount = stoneRowAmount(sr);
                                             const isEditing = editingStoneId === sr.id;
                                             const rowBg = isEditing ? "rgba(92,10,10,0.04)" : idx % 2 === 0 ? "white" : "var(--cream-light)";
                                             return (
@@ -759,15 +753,16 @@ export default function BulkEntryPanel({
                                         }
                                         setQuickMetal(v);
                                     }}>
+                                    <option value="Auto">Auto (Gold)</option>
                                     {metals.map(m => <option key={m} value={m}>{m}</option>)}
-                                    {!metals.some(m => m.toLowerCase() === quickMetalSel.toLowerCase()) && (
+                                    {quickMetalSel !== "Auto" && !metals.some(m => m.toLowerCase() === quickMetalSel.toLowerCase()) && (
                                         <option value={quickMetalSel}>{quickMetalSel}</option>
                                     )}
                                     <option value="__add__">+ Add metal…</option>
                                 </select>
                                 <button type="button" className="btn btn-ghost btn-icon"
                                     title={`Remove "${quickMetalSel}" from the metal list`}
-                                    disabled={metals.length <= 1}
+                                    disabled={quickMetalSel === "Auto" || metals.length <= 1}
                                     onClick={() => {
                                         if (window.confirm(`Remove "${quickMetalSel}" from the metal list?`)) {
                                             onRemoveMetal?.(quickMetalSel);
@@ -806,7 +801,7 @@ export default function BulkEntryPanel({
                         <div className="form-group" style={{ marginBottom: 0 }}>
                             <label className="form-label" style={{ fontSize: "0.8rem" }}>Description</label>
                             <input className="form-input" list="bulk-quick-desc-list"
-                                placeholder="e.g. Bulk Gold Stock — Batch #12"
+                                placeholder="e.g. Bulk Metal Stock — Batch #12"
                                 value={quickDesc}
                                 onChange={e => setQuickDesc(e.target.value)}
                                 onFocus={sel}
@@ -822,11 +817,11 @@ export default function BulkEntryPanel({
                     {/* 2. Weight + Pcs + Rate — always 3-column */}
                     <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr 1fr", gap: 8, marginBottom: 8 }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="form-label" style={{ fontSize: "0.8rem" }}>{quickMetalSel} Weight (g)</label>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>{quickMetalResolved} Weight (g)</label>
                             <div style={{ position: "relative" }}>
                                 <input className="form-input" type="number" min={0} step={0.001}
                                     value={quickWeight || ""}
-                                    onChange={e => setQuickWeight(Number(e.target.value))}
+                                    onChange={e => setQuickWeight(Math.max(0, Number(e.target.value)))}
                                     onFocus={sel}
                                     placeholder="0.000"
                                     style={{ paddingRight: 26, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem" }}
@@ -838,7 +833,7 @@ export default function BulkEntryPanel({
                             <label className="form-label" style={{ fontSize: "0.8rem" }}>PCS</label>
                             <input className="form-input" type="number" min={1} step={1}
                                 value={quickPieces || ""}
-                                onChange={e => setQuickPieces(Number(e.target.value))}
+                                onChange={e => setQuickPieces(Math.max(0, Number(e.target.value)))}
                                 onFocus={sel}
                                 placeholder="1"
                                 style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem", textAlign: "center" }}
@@ -849,7 +844,7 @@ export default function BulkEntryPanel({
                             <div style={{ position: "relative" }}>
                                 <input className="form-input" type="number" min={0} step={100}
                                     value={quickLocalRate || ""}
-                                    onChange={e => setQuickLocalRate(Number(e.target.value))}
+                                    onChange={e => setQuickLocalRate(Math.max(0, Number(e.target.value)))}
                                     onFocus={sel}
                                     placeholder="e.g. 270000"
                                     style={{ paddingRight: 32, fontFamily: "var(--font-mono)", fontSize: "0.875rem" }}
@@ -869,7 +864,7 @@ export default function BulkEntryPanel({
                                 <label className="form-label" style={{ fontSize: "0.78rem" }}>Carat</label>
                                 <input className="form-input" type="number" min={0} max={24} step={0.5}
                                     value={quickCarat || ""}
-                                    onChange={e => setQuickCarat(Number(e.target.value))}
+                                    onChange={e => setQuickCarat(Math.max(0, Number(e.target.value)))}
                                     onFocus={sel}
                                     placeholder="e.g. 21"
                                     style={{ fontSize: "0.9rem", fontFamily: "var(--font-mono)", fontWeight: 700 }}
@@ -888,6 +883,7 @@ export default function BulkEntryPanel({
                                     <option value="Ratti Kaat">Ratti</option>
                                     <option value="None">Pasa</option>
                                     <option value="Purity">Purity</option>
+                                    <option value="Lump Sum">Lump Sum</option>
                                 </select>
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -896,14 +892,16 @@ export default function BulkEntryPanel({
                                         ? "Ratti  —  Wt × (96 − ratti) / 96"
                                         : localKaatBasis === "Purity"
                                         ? "Purity  —  Wt × purity"
+                                        : localKaatBasis === "Lump Sum"
+                                        ? "Cut (g)  —  Wt − fixed grams"
                                         : "Pasa  —  No Cutting"}
                                 </label>
-                                <input className="form-input" type="number" min={0} step={localKaatBasis === "Purity" ? 0.001 : 0.1}
+                                <input className="form-input" type="number" min={0} step={localKaatBasis === "Purity" ? 0.001 : localKaatBasis === "Lump Sum" ? 0.001 : 0.1}
                                     max={localKaatBasis === "Purity" ? 1 : undefined}
                                     value={localKaatRate || ""}
-                                    onChange={e => setLocalKaatRate(Number(e.target.value))}
+                                    onChange={e => setLocalKaatRate(Math.max(0, Number(e.target.value)))}
                                     onFocus={sel}
-                                    placeholder={localKaatBasis === "None" ? "—" : localKaatBasis === "Purity" ? "e.g. .88" : "e.g. 4"}
+                                    placeholder={localKaatBasis === "None" ? "—" : localKaatBasis === "Purity" ? "e.g. .88" : localKaatBasis === "Lump Sum" ? "e.g. 0.500" : "e.g. 4"}
                                     disabled={localKaatBasis === "None"}
                                     style={{ fontFamily: "var(--font-mono)", fontSize: "0.875rem", opacity: localKaatBasis === "None" ? 0.4 : 1 }}
                                 />
@@ -943,7 +941,7 @@ export default function BulkEntryPanel({
                             </label>
                             <input className="form-input" type="number" min={0} step={1}
                                 value={localLabourRate || ""}
-                                onChange={e => setLocalLabourRate(Number(e.target.value))}
+                                onChange={e => setLocalLabourRate(Math.max(0, Number(e.target.value)))}
                                 onFocus={sel}
                                 placeholder="0"
                                 style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
@@ -991,7 +989,7 @@ export default function BulkEntryPanel({
                         <label className="form-label" style={{ fontSize: "0.8rem" }}>Guaranteed Ratti Kaat (Supplier's claim)</label>
                         <input className="form-input" type="number" min={0} step={0.5}
                             value={gRatti || ""}
-                            onChange={e => setGRatti(Number(e.target.value))}
+                            onChange={e => setGRatti(Math.max(0, Number(e.target.value)))}
                             onFocus={sel}
                             placeholder="e.g. 12"
                             style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
@@ -1072,7 +1070,7 @@ export default function BulkEntryPanel({
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                                 {/* Weight rows */}
                                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
-                                    <span style={{ color: "var(--text-muted)" }}>Gold Weight (Gross)</span>
+                                    <span style={{ color: "var(--text-muted)" }}>{quickMetalResolved} Weight (Gross)</span>
                                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontWeight: 600 }}>
                                         {quickWeight.toFixed(3)} g
                                     </span>
@@ -1081,7 +1079,7 @@ export default function BulkEntryPanel({
                                     <>
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "0.78rem" }}>
                                             <span style={{ color: "var(--danger)" }}>
-                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : `Purity ${localKaatRate}`})
+                                                Kaat ({localKaatBasis === "Ratti Kaat" ? `${localKaatRate} ratti` : localKaatBasis === "Lump Sum" ? `${localKaatRate} g fixed` : `Purity ${localKaatRate}`})
                                             </span>
                                             <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
                                                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--danger)", fontWeight: 600 }}>
@@ -1093,7 +1091,7 @@ export default function BulkEntryPanel({
                                             </span>
                                         </div>
                                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", borderBottom: "1px dashed var(--border)", paddingBottom: 4, marginBottom: 2 }}>
-                                            <span style={{ color: "var(--success)", fontWeight: 700 }}>Net Gold Weight</span>
+                                            <span style={{ color: "var(--success)", fontWeight: 700 }}>Net {quickMetalResolved} Weight</span>
                                             <span style={{ fontFamily: "var(--font-mono)", color: "var(--success)", fontWeight: 800 }}>
                                                 {kaatPureWeight!.toFixed(3)} g
                                             </span>
@@ -1164,7 +1162,7 @@ export default function BulkEntryPanel({
                                 <div style={{ position: "relative" }}>
                                     <input className="form-input" type="number" min={0} step={0.001}
                                         value={totalBulkWeight || ""}
-                                        onChange={e => setTotalBulkWeight(Number(e.target.value))}
+                                        onChange={e => setTotalBulkWeight(Math.max(0, Number(e.target.value)))}
                                         onFocus={sel}
                                         placeholder="e.g. 500.000"
                                         style={{ paddingRight: 30, fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: "0.9375rem" }}
@@ -1176,7 +1174,7 @@ export default function BulkEntryPanel({
                                 <label className="form-label" style={{ fontSize: "0.8rem" }}>Carat</label>
                                 <input className="form-input" type="number" min={1} max={24} step={0.5}
                                     value={bulkCarat || ""}
-                                    onChange={e => setBulkCarat(Number(e.target.value))}
+                                    onChange={e => setBulkCarat(Math.max(0, Number(e.target.value)))}
                                     onFocus={sel}
                                     style={{ fontSize: "0.9rem" }}
                                 />
@@ -1380,23 +1378,25 @@ export default function BulkEntryPanel({
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     {onSaveDraft && (
                         <button className="btn btn-ghost btn-sm" onClick={handleSaveDraftAction}
-                            disabled={isSaving || !canConfirm}>
+                            disabled={isSaving || !canConfirm}
+                            title="Save as an editable draft — you can re-open and change it later (not final)">
                             <Save size={13} />
                             {isSaving ? "Saving…" : "Save Draft"}
                         </button>
                     )}
                     {onGeneratePdf && (
                         <button className="btn btn-secondary btn-sm" onClick={handleSavePdfAction}
-                            disabled={isGenerating || !canConfirm}>
+                            disabled={isGenerating || !canConfirm}
+                            title="Save the invoice and open a printable PDF">
                             <FileText size={13} />
-                            {isGenerating ? "Generating…" : "Save + PDF"}
+                            {isGenerating ? "Generating…" : "Save & Print"}
                         </button>
                     )}
                     <button className="btn btn-primary btn-sm" onClick={handleAddToInvoice}
                         disabled={!canConfirm}
-                        title={isOverAllocated ? "Reduce weights — total exceeds bulk weight" : ""}>
+                        title={isOverAllocated ? "Reduce weights — total exceeds bulk weight" : "Add this row to the invoice list"}>
                         <PackagePlus size={13} />
-                        Add to Invoice
+                        Add to List
                     </button>
                 </div>
             </div>

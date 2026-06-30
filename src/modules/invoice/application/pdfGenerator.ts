@@ -27,6 +27,9 @@ interface PdfInvoiceData {
     labourRate: number;
     kaatBasis?: string;
     kaatRate?: number;
+    rateType?: "FIXED" | "UNFIXED";
+    intlOunceRate?: number;
+    currency?: string;
     photos?: string[];
     visibleColumns?: Record<string, boolean>;
 }
@@ -99,6 +102,11 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
 
     const isSale    = data.transactionType === "SALE";
     const isPurchase = !isSale;
+    // Money prefix — use the currency CODE (not symbol) so the default PDF font
+    // can render it (e.g. "AED ", "$ ", default "Rs.").
+    const cur = (data.currency && data.currency !== "PKR")
+        ? (data.currency === "USD" ? "$" : data.currency + " ")
+        : "Rs.";
     let y = M;
 
     const ensureSpace = (need: number) => {
@@ -146,11 +154,18 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
             isSale ? "Order #" : "Receipt",
             isSale ? String(data.orderNumber) : (data.receiptNo || "—"),
             "Gold Rate",
-            `Rs.${fmtNum(data.goldRate)} / Tola`,
+            `${cur}${fmtNum(data.goldRate)} / Tola`,
         ],
         ["Date",   data.date,                       "Polish",  `${data.polishRate}  (${data.polishBasis})`],
         ["Party",  data.partyName || "Walk-in",     "Labour",  `${data.labourRate}  (${data.labourBasis})`],
-        ["Mobile", data.partyMobile || "—",         "Receipt", data.receiptNo || "—"],
+        [
+            "Mobile", data.partyMobile || "—",
+            // Purchase shows the rate fixing (Fixed @ ounce rate) instead of a duplicate Receipt
+            isSale ? "Receipt" : "Rate Type",
+            isSale
+                ? (data.receiptNo || "—")
+                : `${data.rateType || "FIXED"}${data.rateType !== "UNFIXED" && data.intlOunceRate ? ` @ $${fmtNum(data.intlOunceRate)}/oz` : ""}`,
+        ],
     ];
 
     const lx  = M + 4;
@@ -316,15 +331,15 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
             ["Total Gold Wt :",          `${data.totalGoldWeight.toFixed(3)} g`],
             ["  Pakka Tola (÷12.150) :", `${pakkaTola} Tola`],
             ["  Kacha Tola (÷11.664) :", `${kachaTola} Tola`],
-            ["Items Total :",            `Rs.${fmtNum(data.totalAmount)}`],
+            ["Items Total :",            `${cur}${fmtNum(data.totalAmount)}`],
           ];
 
     if (!isPurchase) {
-        if (data.otherCharges  > 0) summaryLines.push(["Other Charges :",   `+ Rs.${fmtNum(data.otherCharges)}`]);
-        if (data.discount      > 0) summaryLines.push(["Discount :",        `- Rs.${fmtNum(data.discount)}`]);
-        if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value :",  `- Rs.${fmtNum(data.partyGoldValue)}`]);
-        if (data.pasaDeduction  > 0) summaryLines.push(["Pasa Deduction :", `- Rs.${fmtNum(data.pasaDeduction)}`]);
-        if (data.cashReceived  > 0) summaryLines.push(["Cash Received :",   `Rs.${fmtNum(data.cashReceived)}`]);
+        if (data.otherCharges  > 0) summaryLines.push(["Other Charges :",   `+ ${cur}${fmtNum(data.otherCharges)}`]);
+        if (data.discount      > 0) summaryLines.push(["Discount :",        `- ${cur}${fmtNum(data.discount)}`]);
+        if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value :",  `- ${cur}${fmtNum(data.partyGoldValue)}`]);
+        if (data.pasaDeduction  > 0) summaryLines.push(["Pasa Deduction :", `- ${cur}${fmtNum(data.pasaDeduction)}`]);
+        if (data.cashReceived  > 0) summaryLines.push(["Cash Received :",   `${cur}${fmtNum(data.cashReceived)}`]);
     }
 
     const SUM_LH  = 5.4;
@@ -379,7 +394,7 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
         doc.text(`${netPure.toFixed(3)} g`, sumX + sumW - 4, sy + 4, { align: "right" });
     } else {
         doc.text("Balance Due:", sumX + 4, sy + 4);
-        doc.text(`Rs.${fmtNum(data.balance)}`, sumX + sumW - 4, sy + 4, { align: "right" });
+        doc.text(`${cur}${fmtNum(data.balance)}`, sumX + sumW - 4, sy + 4, { align: "right" });
     }
 
     const sigY     = y + sumTotalH - 14;

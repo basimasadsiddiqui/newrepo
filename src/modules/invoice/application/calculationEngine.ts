@@ -59,8 +59,9 @@ export function rattiToKarat(ratti: number): number {
 /** Supported basis types for Labour calculation */
 export type LabourBasis = "Per Tola" | "Per Tola Pakka" | "Per Gram" | "Per Piece" | "Lump Sum" | "Fixed";
 
-/** Supported basis types for Kaat calculation */
-export type KaatBasis = "Ratti Kaat" | "Direct Weight" | "Pasa" | "Purity %";
+/** Supported basis types for Kaat calculation.
+ *  "Lump Sum" = a fixed gram/milligram cut deducted directly from the entered weight. */
+export type KaatBasis = "Ratti Kaat" | "Direct Weight" | "Pasa" | "Purity %" | "Lump Sum";
 
 // ─── Gold Weight Calculations ──────────────────────────────────
 
@@ -230,7 +231,8 @@ export function calcLineTotal(
         .plus(diamondAmount)
         .plus(polishAmount)
         .plus(labourAmount);
-    return result.toDecimalPlaces(4).toNumber();
+    // Never allow a negative line total (client: "Don't allow minus entry")
+    return Decimal.max(result, 0).toDecimalPlaces(4).toNumber();
 }
 
 // ─── Full Line Item Calculation ────────────────────────────────
@@ -281,6 +283,10 @@ export function calculateLineItem(params: {
         } else if (params.kaatBasis === "Direct Weight") {
             kaatWeight = params.kaatRate;
             adjustedGoldWeight = new Decimal(pureWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
+        } else if (params.kaatBasis === "Lump Sum") {
+            // Fixed gram/milligram cut deducted directly from the entered weight
+            kaatWeight = params.kaatRate;
+            adjustedGoldWeight = new Decimal(params.estimatedGoldWeight).minus(kaatWeight).toDecimalPlaces(4).toNumber();
         } else if (params.kaatBasis === "Purity %") {
             // Wt × purity (decimal)  e.g. 60 × 0.875 = 52.500
             adjustedGoldWeight = new Decimal(params.estimatedGoldWeight)

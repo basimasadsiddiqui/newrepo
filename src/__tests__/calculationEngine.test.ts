@@ -19,6 +19,7 @@ import {
     calcPasaAdjustedWeight,
     calcPolishAmount,
     calcLabourAmount,
+    calcLineTotal,
     calculateLineItem,
     calculateInvoiceSummary,
 } from "../modules/invoice/application/calculationEngine";
@@ -163,6 +164,45 @@ const partialKaratResult = calculateLineItem({
 });
 assertClose(partialKaratResult.adjustedGoldWeight, 87.5, 0.001, "Pure Wt = 100 × 21/24 = 87.5g (reference only)");
 assertClose(partialKaratResult.goldAmount, 10000, 0.01, "Gold amount = rate(100) × entered weight(100) = 10,000, not Pure Wt");
+
+// ─── Lump Sum Kaat (fixed gram/mg cutting) ─────────────────────
+
+console.log("\n✂️  Lump Sum Kaat");
+
+const lumpSum = calculateLineItem({
+    transactionType: "PURCHASE",
+    estimatedGoldWeight: 100,
+    carat: 24,
+    goldRatePerGram: 100,
+    polishRate: 0, polishBasis: "Per Tola",
+    labourRate: 0, labourBasis: "Per Tola",
+    kaatBasis: "Lump Sum", kaatRate: 0.5,
+    stoneWeight: 0, beadsWeight: 0, diamondWeight: 0,
+    stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
+});
+assertClose(lumpSum.adjustedGoldWeight, 99.5, 0.001, "Lump Sum: 100 − 0.5g fixed cut = 99.5g net");
+assertClose(lumpSum.kaatWeight ?? 0, 0.5, 0.001, "Lump Sum: kaat weight = the fixed 0.5g");
+assertClose(lumpSum.goldAmount, 10000, 0.01, "Lump Sum: gold amount still on entered weight (100 × 100)");
+
+// Over-cut is clamped, never negative net weight
+const lumpSumOver = calculateLineItem({
+    transactionType: "PURCHASE",
+    estimatedGoldWeight: 10,
+    carat: 24,
+    goldRatePerGram: 100,
+    polishRate: 0, polishBasis: "Per Tola",
+    labourRate: 0, labourBasis: "Per Tola",
+    kaatBasis: "Lump Sum", kaatRate: 25,
+    stoneWeight: 0, beadsWeight: 0, diamondWeight: 0,
+    stoneAmount: 0, beadsAmount: 0, diamondAmount: 0,
+});
+assertClose(lumpSumOver.adjustedGoldWeight, 0, 0.001, "Lump Sum: over-cut clamps net weight to 0");
+
+// ─── Minus-entry guard ─────────────────────────────────────────
+
+console.log("\n🚫 No-minus guard");
+
+assertClose(calcLineTotal(0, 0, 0, 0, 0, -15000), 0, 0.01, "Negative labour can never drive a line total below 0");
 
 // ─── Invoice Summary ──────────────────────────────────────────
 

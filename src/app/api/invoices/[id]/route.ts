@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@core/database";
+import { convertInvoiceBodyToPkr } from "@/shared/utils/currency";
 
 const ORG_ID = "org-akhtar";
 
@@ -47,6 +48,8 @@ export async function PUT(req: NextRequest, context: RouteParams) {
     try {
         const { id } = await context.params;
         const body = await req.json();
+        // Foreign-currency amounts are entered in the selected currency; store PKR.
+        convertInvoiceBodyToPkr(body);
 
         // Verify invoice exists and belongs to org
         const existing = await prisma.invoice.findFirst({ where: { id, orgId: ORG_ID } });
@@ -80,6 +83,9 @@ export async function PUT(req: NextRequest, context: RouteParams) {
             date,
             dueDate,
             rateType = "FIXED",
+            currency = "PKR",
+            currencyRate = 1,
+            intlOunceRate = 0,
             goldRate = 0,
             polishBasis = "Per Tola",
             polishRate = 0,
@@ -91,7 +97,11 @@ export async function PUT(req: NextRequest, context: RouteParams) {
             partyGoldCarat,
             pasaRate = 0,
             otherCharges = 0,
+            otherChargesMode = "RS",
+            otherChargesWeight = 0,
             discount = 0,
+            discountMode = "RS",
+            discountWeight = 0,
             cashReceived = 0,
             goldReceived = 0,
             remarks,
@@ -106,6 +116,9 @@ export async function PUT(req: NextRequest, context: RouteParams) {
             date?: string;
             dueDate?: string;
             rateType?: "FIXED" | "UNFIXED";
+            currency?: string;
+            currencyRate?: number;
+            intlOunceRate?: number;
             goldRate?: number;
             polishBasis?: string;
             polishRate?: number;
@@ -117,7 +130,11 @@ export async function PUT(req: NextRequest, context: RouteParams) {
             partyGoldCarat?: number;
             pasaRate?: number;
             otherCharges?: number;
+            otherChargesMode?: string;
+            otherChargesWeight?: number;
             discount?: number;
+            discountMode?: string;
+            discountWeight?: number;
             cashReceived?: number;
             goldReceived?: number;
             remarks?: string;
@@ -253,6 +270,9 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                     date: date ? new Date(date) : undefined,
                     dueDate: dueDate ? new Date(dueDate) : null,
                     rateType,
+                    currency: currency || "PKR",
+                    currencyRate: toNumber(currencyRate, 1),
+                    intlOunceRate: toNumber(intlOunceRate, 0),
                     goldRate: toNumber(goldRate, 0),
                     polishBasis: safePolishBasis,
                     polishRate: toNumber(polishRate, 0),
@@ -267,7 +287,11 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                     totalPureGoldWeight: totalPureGoldWeight || 0,
                     totalAmount: serverSummary.totalAmount || 0,
                     otherCharges: toNumber(otherCharges, 0),
+                    otherChargesMode: otherChargesMode === "GOLD" ? "GOLD" : "RS",
+                    otherChargesWeight: toNumber(otherChargesWeight, 0),
                     discount: toNumber(discount, 0),
+                    discountMode: discountMode === "GOLD" ? "GOLD" : "RS",
+                    discountWeight: toNumber(discountWeight, 0),
                     cashReceived: toNumber(cashReceived, 0),
                     goldReceived: toNumber(goldReceived, 0),
                     balance: serverSummary.balance || 0,
