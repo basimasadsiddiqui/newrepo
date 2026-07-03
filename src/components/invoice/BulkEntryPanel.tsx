@@ -7,7 +7,7 @@ import {
     Gem,
 } from "lucide-react";
 import type { Category } from "@/types";
-import { calculateLineItem, goldRateToPerGramPakka, gramsToPakkaTola, gramsToKachaTola } from "@/lib/calculationEngine";
+import { calculateLineItem, goldRateToPerGramPakka } from "@/lib/calculationEngine";
 import type { PolishLabourBasis, LabourBasis, KaatBasis } from "@/lib/calculationEngine";
 import { stoneRowAmount } from "@/shared/utils/stone";
 import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
@@ -949,40 +949,7 @@ export default function BulkEntryPanel({
                         </div>
                     </div>
 
-                    {/* Per Tola labour — Pakka vs Kacha comparison */}
-                    {localLabourBasis === "Per Tola" && localLabourRate > 0 && quickWeight > 0 && (
-                        <div style={{
-                            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
-                            padding: "7px 10px", marginBottom: 8,
-                            background: "rgba(201,168,76,0.07)",
-                            border: "1px solid var(--gold-light)", borderRadius: 7,
-                        }}>
-                            <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
-                                Labour Rates
-                            </div>
-                            <div>
-                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Kacha Tola)</div>
-                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 2 }}>
-                                    {gramsToKachaTola(quickWeight).toFixed(4)} tola × Rs.{localLabourRate}
-                                </div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.88rem", color: "var(--text-secondary)" }}>
-                                    Rs. {(gramsToKachaTola(quickWeight) * localLabourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                </div>
-                            </div>
-                            <div>
-                                <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Pakka Tola)</div>
-                                <div style={{ fontSize: "0.6rem", color: "var(--text-muted)", marginBottom: 2 }}>
-                                    {gramsToPakkaTola(quickWeight).toFixed(4)} tola × Rs.{localLabourRate}
-                                </div>
-                                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.88rem", color: "var(--maroon)" }}>
-                                    Rs. {(gramsToPakkaTola(quickWeight) * localLabourRate).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                </div>
-                            </div>
-                            <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", color: "var(--text-muted)", marginTop: 1 }}>
-                                ↑ On gross weight ({quickWeight.toFixed(3)} g) — engine uses Kacha Tola by default
-                            </div>
-                        </div>
-                    )}
+                    {/* Pakka/Kacha Tola labour comparison removed — bulk purchase shows grams only */}
 
                     {/* 5. Supplier Guarantee — ratti kaat only, no verification */}
                     <div className="form-group" style={{ marginBottom: 8 }}>

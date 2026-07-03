@@ -281,38 +281,42 @@ export default function InvoiceHeader({
                         />
                     </div>
 
-                    {/* Receipt No — auto-generated on load, manually overridable */}
-                    <div className="form-group">
-                        <label className="form-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span>Receipt No</span>
-                            {receiptNo && (
-                                <span style={{
-                                    fontSize: "0.55rem",
-                                    background: "rgba(201,168,76,0.15)",
-                                    color: "var(--gold-dark)",
-                                    border: "1px solid rgba(201,168,76,0.3)",
-                                    padding: "1px 5px",
-                                    borderRadius: 99,
+                    {/* Receipt / Invoice No — sale only. On purchase the supplier's own
+                        invoice is uploaded as a photo, so no number field is shown.
+                        (receiptNo is still auto-generated in the background as an internal ref.) */}
+                    {isSale && (
+                        <div className="form-group">
+                            <label className="form-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span>Receipt No</span>
+                                {receiptNo && (
+                                    <span style={{
+                                        fontSize: "0.55rem",
+                                        background: "rgba(201,168,76,0.15)",
+                                        color: "var(--gold-dark)",
+                                        border: "1px solid rgba(201,168,76,0.3)",
+                                        padding: "1px 5px",
+                                        borderRadius: 99,
+                                        fontWeight: 700,
+                                        letterSpacing: "0.06em",
+                                        textTransform: "uppercase",
+                                    }}>Auto</span>
+                                )}
+                            </label>
+                            <input
+                                className="form-input"
+                                value={receiptNo}
+                                onChange={(e) => onReceiptNoChange(e.target.value)}
+                                placeholder="Generating…"
+                                style={{
+                                    height: "32px",
+                                    fontFamily: "var(--font-mono)",
                                     fontWeight: 700,
+                                    color: "var(--gold-dark)",
                                     letterSpacing: "0.06em",
-                                    textTransform: "uppercase",
-                                }}>Auto</span>
-                            )}
-                        </label>
-                        <input
-                            className="form-input"
-                            value={receiptNo}
-                            onChange={(e) => onReceiptNoChange(e.target.value)}
-                            placeholder="Generating…"
-                            style={{
-                                height: "32px",
-                                fontFamily: "var(--font-mono)",
-                                fontWeight: 700,
-                                color: "var(--gold-dark)",
-                                letterSpacing: "0.06em",
-                            }}
-                        />
-                    </div>
+                                }}
+                            />
+                        </div>
+                    )}
 
                     {/* Rate Type */}
                     <div className="form-group">

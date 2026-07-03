@@ -2,7 +2,7 @@
 
 import { Plus, RotateCcw, Package, X, Gem } from "lucide-react";
 import type { Category, ItemEntryFormData, MetalTypeOption } from "@/types";
-import { type KaatBasis, type LabourBasis, calcLabourAmount } from "@/lib/calculationEngine";
+import { type KaatBasis, type LabourBasis } from "@/lib/calculationEngine";
 import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
 import { useRef, useState, type ChangeEvent } from "react";
 import StockSelectionModal from "./StockSelectionModal";
@@ -463,33 +463,8 @@ export default function ItemEntryForm({
                                     style={{ height: 30, background: "var(--success-bg)", color: "var(--success)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: "0.85rem" }} />
                             </div>
                         </div>
-                        {/* Per Tola labour — Pakka vs Kacha comparison */}
-                        {labourBasis === "Per Tola" && (labourRate ?? 0) > 0 && formData.estimatedGoldWeight > 0 && (
-                            <div style={{
-                                display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6,
-                                padding: "6px 8px", marginTop: 6,
-                                background: "rgba(201,168,76,0.07)",
-                                border: "1px solid var(--border)", borderRadius: 6,
-                            }}>
-                                <div style={{ gridColumn: "1 / -1", fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
-                                    Labour Rates
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Kacha Tola)</div>
-                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                                        Rs. {calcLabourAmount("Per Tola", formData.estimatedGoldWeight, labourRate ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--gold-dark)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Labour Rate (Pakka Tola)</div>
-                                    <div style={{ fontFamily: "var(--font-mono)", fontWeight: 800, fontSize: "0.85rem", color: "var(--maroon)" }}>
-                                        Rs. {calcLabourAmount("Per Tola Pakka", formData.estimatedGoldWeight, labourRate ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 0 })}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        {/* Tola/Masha/Ratti + Pakka/Kacha breakdown removed for purchase —
-                            client wants pure gold shown in plain grams only. */}
+                        {/* Pakka/Kacha Tola labour comparison + Tola/Masha/Ratti breakdown
+                            removed for purchase — client wants pure gold in plain grams only. */}
                     </div>
                 )}
 

@@ -205,7 +205,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
   const [polishBasis, setPolishBasis] = useState<PolishLabourBasis>("Per Tola");
   const [polishRate, setPolishRate] = useState<number>(2.0);
   const [labourBasis, setLabourBasis] = useState<LabourBasis>("Per Tola");
-  const [labourRate, setLabourRate] = useState<number>(1200.0);
+  const [labourRate, setLabourRate] = useState<number>(0);
   const [kaatBasis, setKaatBasis] = useState<KaatBasis>("Ratti Kaat");
   const [kaatRate, setKaatRate] = useState<number>(0);
 
@@ -281,7 +281,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           setPolishBasis((inv.polishBasis as import("@/lib/calculationEngine").PolishLabourBasis) || "Per Tola");
           setPolishRate(fromPkr(inv.polishRate) || 2.0);
           setLabourBasis((inv.labourBasis as import("@/lib/calculationEngine").LabourBasis) || "Per Tola");
-          setLabourRate(fromPkr(inv.labourRate) || 1200);
+          setLabourRate(fromPkr(inv.labourRate));
           setKaatBasis((inv.kaatBasis as import("@/lib/calculationEngine").KaatBasis) || "Direct Weight");
           setKaatRate(Number(inv.kaatRate) || 0);
           // Purchase-specific
