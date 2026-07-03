@@ -180,6 +180,7 @@ export async function POST(req: NextRequest) {
                 imageUrl: (item.imageUrl as string) || null,
                 imageUrls: (item.imageUrls as string[]) || [],
                 guaranteedRatti: (item.guaranteedRatti as number) || 0,
+                goldReturnClaim: (item.goldReturnClaim as number) || 0,
                 inventoryItemId: (item.inventoryItemId as string) || null,
                 metalName: (item.metalName as string) || null,
             };

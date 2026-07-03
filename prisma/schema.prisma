@@ -236,6 +236,7 @@ model InvoiceItem {
   tagCaption           String?
   metalName            String?
   guaranteedRatti      Decimal        @default(0) @db.Decimal(14, 4)
+  goldReturnClaim      Decimal        @default(0) @db.Decimal(14, 4) // supplier's claimed gold return (grams)
   stoneRate            Decimal?       @db.Decimal(14, 4)
   imageUrl             String?
   imageUrls            String[]       @default([])

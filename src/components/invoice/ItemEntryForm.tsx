@@ -106,7 +106,6 @@ export default function ItemEntryForm({
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [hasGemstone, setHasGemstone] = useState(false);
     const [hasBeads, setHasBeads] = useState(false);
-    const [gRatti, setGRatti] = useState<number>(0);
     const itemImageInputRef = useRef<HTMLInputElement>(null);
 
     const customCategoryName = formData.categoryId.startsWith("__new__:")
@@ -374,18 +373,31 @@ export default function ItemEntryForm({
                     </div>
                 </div>
 
-                {/* ── Guaranteed Ratti Kaat (PURCHASE only) — same as Bulk invoice ── */}
+                {/* ── Supplier claims (PURCHASE only): ratti kaat guarantee + gold return ── */}
                 {transactionType === "PURCHASE" && (
-                    <div className="form-group" style={{ marginBottom: 6 }}>
-                        <label className="form-label" style={{ fontSize: "0.8rem" }}>
-                            Guaranteed Ratti Kaat (Supplier&apos;s Claim)
-                        </label>
-                        <input className="form-input" type="number" min={0} step={0.5}
-                            value={gRatti || ""}
-                            onChange={e => setGRatti(Math.max(0, Number(e.target.value)))}
-                            placeholder="e.g. 12"
-                            style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
-                        />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>
+                                Guaranteed Ratti Kaat (Supplier&apos;s Claim)
+                            </label>
+                            <input className="form-input" type="number" min={0} step={0.5}
+                                value={formData.guaranteedRatti || ""}
+                                onChange={e => onFormChange("guaranteedRatti", Math.max(0, Number(e.target.value)))}
+                                placeholder="e.g. 12"
+                                style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                            />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>
+                                Supplier&apos;s Gold Return Claim (g)
+                            </label>
+                            <input className="form-input" type="number" min={0} step={0.001}
+                                value={formData.goldReturnClaim || ""}
+                                onChange={e => onFormChange("goldReturnClaim", Math.max(0, Number(e.target.value)))}
+                                placeholder="e.g. 5.000"
+                                style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                            />
+                        </div>
                     </div>
                 )}
 

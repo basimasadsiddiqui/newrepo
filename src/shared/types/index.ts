@@ -144,6 +144,8 @@ export interface InvoiceItem {
     imageUrls?: string[];
     /** Supplier's claimed ratti kaat guarantee (purchases). */
     guaranteedRatti?: number;
+    /** Supplier's claimed gold return in grams (purchases). */
+    goldReturnClaim?: number;
 
     inventoryItemId?: string | null;
     metalTypeId?: string | null;
@@ -254,6 +256,10 @@ export interface ItemEntryFormData {
     metalTypeId?: string | null;
     metalName?: string | null;
     imageUrl?: string | null;
+    /** Supplier's claimed ratti kaat guarantee (purchases). */
+    guaranteedRatti?: number;
+    /** Supplier's claimed gold return in grams (purchases). */
+    goldReturnClaim?: number;
 }
 
 // ─── Calculation Results ───────────────────────────────────────

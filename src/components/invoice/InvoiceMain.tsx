@@ -94,6 +94,8 @@ const DEFAULT_ITEM_FORM: ItemEntryFormData = {
   imageUrl: null,
   metalTypeId: null,
   metalName: "Gold",
+  guaranteedRatti: 0,
+  goldReturnClaim: 0,
 };
 
 // Purchase mode: keep category/description/carat/pieces/metal — only clear weight & stones
@@ -111,6 +113,8 @@ function purchaseStickyReset(prev: ItemEntryFormData): ItemEntryFormData {
     imageUrl: null,
     isRepairingOrder: false,
     isSampleGold: false,
+    guaranteedRatti: 0,
+    goldReturnClaim: 0,
   };
 }
 
@@ -334,6 +338,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
             imageUrl: (item.imageUrl as string) || null,
             imageUrls: Array.isArray(item.imageUrls) ? (item.imageUrls as string[]) : [],
             guaranteedRatti: Number(item.guaranteedRatti) || 0,
+            goldReturnClaim: Number(item.goldReturnClaim) || 0,
             inventoryItemId: (item.inventoryItemId as string) || null,
             metalTypeId: null,
           }));
@@ -981,7 +986,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         // not the entry form — preserve them across an edit/update.
         imageUrl: (editingItemIndex !== null ? items[editingItemIndex]?.imageUrl : itemForm.imageUrl) || null,
         imageUrls: (editingItemIndex !== null ? items[editingItemIndex]?.imageUrls : undefined) || [],
-        guaranteedRatti: (editingItemIndex !== null ? items[editingItemIndex]?.guaranteedRatti : undefined) ?? 0,
+        guaranteedRatti: itemForm.guaranteedRatti ?? 0,
+        goldReturnClaim: itemForm.goldReturnClaim ?? 0,
         inventoryItemId: itemForm.inventoryItemId || null,
         metalTypeId: itemForm.metalTypeId || null,
         // "Auto" (or unset) resolves to Gold when persisted
@@ -1080,6 +1086,8 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       inventoryItemId: item.inventoryItemId || undefined,
       metalTypeId: item.metalTypeId || null,
       metalName: item.metalName || "Gold",
+      guaranteedRatti: item.guaranteedRatti ?? 0,
+      goldReturnClaim: item.goldReturnClaim ?? 0,
     });
     // Restore diamond entries if present
     setDiamondEntries(item.diamondEntries || []);
@@ -1167,6 +1175,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         imageUrl: item.imageUrl || null,
         imageUrls: item.imageUrls || [],
         guaranteedRatti: item.guaranteedRatti ?? 0,
+        goldReturnClaim: item.goldReturnClaim ?? 0,
         metalTypeId: item.metalTypeId || null,
         metalName: item.metalName || null,
       })),
@@ -1387,6 +1396,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
           imageUrl: null,
           imageUrls: [],
           guaranteedRatti: r.guaranteedRatti ?? 0,
+          goldReturnClaim: r.goldReturnClaim ?? 0,
           inventoryItemId: null,
           metalTypeId: null,
           metalName: r.metalName || null,

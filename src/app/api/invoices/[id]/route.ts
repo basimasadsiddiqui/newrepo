@@ -203,6 +203,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                 imageUrl: (item.imageUrl as string) || null,
                 imageUrls: (item.imageUrls as string[]) || [],
                 guaranteedRatti: (item.guaranteedRatti as number) || 0,
+                goldReturnClaim: (item.goldReturnClaim as number) || 0,
                 inventoryItemId: (item.inventoryItemId as string) || null,
             };
         });
@@ -331,6 +332,7 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                         imageUrl: item.imageUrl,
                         imageUrls: item.imageUrls || [],
                         guaranteedRatti: item.guaranteedRatti || 0,
+                        goldReturnClaim: item.goldReturnClaim || 0,
                         inventoryItemId: item.inventoryItemId,
                     })),
                 });

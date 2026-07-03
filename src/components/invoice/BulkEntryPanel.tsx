@@ -30,6 +30,7 @@ export interface BulkRow {
     stoneWeight: number;
     stoneAmount?: number;         // pre-calculated stone total
     guaranteedRatti?: number;     // supplier's claimed ratti kaat guarantee
+    goldReturnClaim?: number;     // supplier's claimed gold return (grams)
     goldAmount?: number;          // pre-calculated gold value
     labourAmount?: number;        // pre-calculated labour
     totalAmount?: number;         // pre-calculated total
@@ -124,6 +125,7 @@ export default function BulkEntryPanel({
     const [quickPieces, setQuickPieces] = useState<number>(1);
     const [quickCarat, setQuickCarat] = useState<number>(21);
     const [gRatti, setGRatti] = useState<number>(0);   // supplier's guaranteed ratti kaat
+    const [gReturn, setGReturn] = useState<number>(0); // supplier's claimed gold return (grams)
     const [hasStone, setHasStone] = useState(false);
     const [stoneRows, setStoneRows] = useState<StoneRow[]>([]);
     const [stoneDraft, setStoneDraft] = useState<StoneRow>(() => mkStoneRow());
@@ -286,6 +288,7 @@ export default function BulkEntryPanel({
         setQuickPieces(1);
         setQuickCarat(21);
         setGRatti(0);
+        setGReturn(0);
         setHasStone(false);
         setStoneRows([]);
         setStoneDraft(mkStoneRow());
@@ -322,10 +325,11 @@ export default function BulkEntryPanel({
             stoneWeight: hasStone ? totalStoneWeightG : 0,
             stoneAmount: hasStone ? totalStoneAmount : 0,
             guaranteedRatti: gRatti,
+            goldReturnClaim: gReturn,
             goldAmount: quickCalc?.goldAmount ?? 0,
             labourAmount: quickCalc?.labourAmount ?? 0,
             totalAmount: quickCalc?.totalAmount ?? 0,
-            notes: [gRatti > 0 ? `Guarantee: ${gRatti} ratti` : "", quickNotes].filter(Boolean).join(" | "),
+            notes: [gRatti > 0 ? `Guarantee: ${gRatti} ratti` : "", gReturn > 0 ? `Gold return claim: ${gReturn} g` : "", quickNotes].filter(Boolean).join(" | "),
             isBulkPurchase: true,
         }];
     };
@@ -951,16 +955,28 @@ export default function BulkEntryPanel({
 
                     {/* Pakka/Kacha Tola labour comparison removed — bulk purchase shows grams only */}
 
-                    {/* 5. Supplier Guarantee — ratti kaat only, no verification */}
-                    <div className="form-group" style={{ marginBottom: 8 }}>
-                        <label className="form-label" style={{ fontSize: "0.8rem" }}>Guaranteed Ratti Kaat (Supplier's claim)</label>
-                        <input className="form-input" type="number" min={0} step={0.5}
-                            value={gRatti || ""}
-                            onChange={e => setGRatti(Math.max(0, Number(e.target.value)))}
-                            onFocus={sel}
-                            placeholder="e.g. 12"
-                            style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
-                        />
+                    {/* 5. Supplier claims — ratti kaat guarantee + gold return */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Guaranteed Ratti Kaat (Supplier's claim)</label>
+                            <input className="form-input" type="number" min={0} step={0.5}
+                                value={gRatti || ""}
+                                onChange={e => setGRatti(Math.max(0, Number(e.target.value)))}
+                                onFocus={sel}
+                                placeholder="e.g. 12"
+                                style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                            />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: "0.8rem" }}>Supplier's Gold Return Claim (g)</label>
+                            <input className="form-input" type="number" min={0} step={0.001}
+                                value={gReturn || ""}
+                                onChange={e => setGReturn(Math.max(0, Number(e.target.value)))}
+                                onFocus={sel}
+                                placeholder="e.g. 5.000"
+                                style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                            />
+                        </div>
                     </div>
 
                     {/* 6. Stone / Gemstone — checkbox opens modal for multi-stone entry */}
