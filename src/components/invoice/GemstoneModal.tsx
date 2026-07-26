@@ -52,6 +52,10 @@ function calcAmount(r: StoneRow): number {
     return stoneRowAmount(r);
 }
 
+function fmtRs(amount: number): string {
+    return amount.toLocaleString("en-PK", { maximumFractionDigits: 0 });
+}
+
 export default function GemstoneModal({
     isOpen,
     onClose,
@@ -64,6 +68,14 @@ export default function GemstoneModal({
     const [draft, setDraft] = useState<StoneRow>(() => mkRow());
     const [editingId, setEditingId] = useState<string | null>(null);
     const [presets, setPresets] = useState<GemstonePreset[]>([]);
+    /** Stone totals the item already carries that NO row here accounts for.
+     *  Rows are not persisted with the invoice, so an item loaded from the DB —
+     *  or edited after a page reload — arrives as a bare weight/amount with no
+     *  breakdown. Applying rows in that state replaces those totals instead of
+     *  adding to them, so the user gets a banner + an explicit confirm.
+     *  null ⇒ nothing at risk (fresh item, or the rows shown match the item). */
+    const [unlistedExisting, setUnlistedExisting] =
+        useState<{ weight: number; amount: number } | null>(null);
 
     // The modal stays mounted while closed, so its rows survive between openings.
     // Latest rows kept in a ref so the open-effect can inspect them without
@@ -106,6 +118,15 @@ export default function GemstoneModal({
             setDraft(mkRow());
             setEditingId(null);
         }
+
+        // Item has stones but no rows explain them ⇒ the breakdown is lost and
+        // applying would overwrite the totals. Remember it for the banner and
+        // for the confirm in handleConfirm.
+        setUnlistedExisting(
+            itemHasGems && !rowsMatchItem
+                ? { weight: existingStoneWeight, amount: existingStoneAmount }
+                : null
+        );
     }, [isOpen, existingStoneWeight, existingStoneAmount]);
 
     if (!isOpen) return null;
@@ -152,6 +173,21 @@ export default function GemstoneModal({
             onClose();
             return;
         }
+        // The item already carries stone totals that these rows do not account
+        // for (the earlier breakdown was never saved). Applying REPLACES them,
+        // so make the user say so out loud — same guard style as the
+        // "untick Gemstone" confirm in ItemEntryForm.
+        if (unlistedExisting) {
+            const ok = window.confirm(
+                `This item already has ${unlistedExisting.weight.toFixed(3)} g / ` +
+                `Rs ${fmtRs(unlistedExisting.amount)} of stones.\n\n` +
+                `Applying REPLACES those totals with the ${rows.length} row` +
+                `${rows.length === 1 ? "" : "s"} listed here ` +
+                `(${totalWeightG.toFixed(3)} g / Rs ${fmtRs(totalAmount)}). ` +
+                `They are NOT added together.\n\nContinue?`
+            );
+            if (!ok) return;
+        }
         const note = rows
             .filter(r => r.type.trim())
             .map(r => `${r.type} ${r.pieces}pc ${r.value}${r.unit}`)
@@ -162,6 +198,7 @@ export default function GemstoneModal({
         // discards them as soon as the modal is opened for a different/fresh item.
         setDraft(mkRow());
         setEditingId(null);
+        setUnlistedExisting(null);
         onClose();
     };
 
@@ -206,6 +243,26 @@ export default function GemstoneModal({
                         fontSize: "1rem", fontWeight: 700,
                     }}>×</button>
                 </div>
+
+                {/* Existing stones with no listed breakdown — warn before overwriting */}
+                {unlistedExisting && (
+                    <div style={{
+                        padding: "9px 14px",
+                        background: "#fef3c7",
+                        borderBottom: "1px solid #e2b44a",
+                        color: "#92400e",
+                        fontSize: "0.72rem",
+                        lineHeight: 1.5,
+                        flexShrink: 0,
+                    }}>
+                        <strong style={{ fontWeight: 800 }}>
+                            This item already has {unlistedExisting.weight.toFixed(3)} g / Rs {fmtRs(unlistedExisting.amount)} of stones.
+                        </strong>{" "}
+                        Individual stone rows aren&apos;t saved with the invoice, so they can&apos;t be listed here.
+                        Anything you add below <strong style={{ fontWeight: 800 }}>replaces</strong> those totals — it is not added to them.
+                        Press <em>Cancel</em> to leave the item exactly as it is.
+                    </div>
+                )}
 
                 {/* ── Preset tiles from Settings ── */}
                 {presets.length > 0 && (
