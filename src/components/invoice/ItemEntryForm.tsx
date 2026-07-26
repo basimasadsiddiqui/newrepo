@@ -104,8 +104,10 @@ export default function ItemEntryForm({
     const [isGemstoneModalOpen, setIsGemstoneModalOpen] = useState(false);
     const [isBeadsModalOpen, setIsBeadsModalOpen] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
-    const [hasGemstone, setHasGemstone] = useState(false);
     const [hasBeads, setHasBeads] = useState(false);
+    // Derived, not stored: a local flag used to stay ticked after the form was
+    // cleared for the next item, which made the Gemstone modal look "sticky" (#19).
+    const hasGemstone = formData.stoneWeight > 0 || formData.stoneAmount > 0;
     const itemImageInputRef = useRef<HTMLInputElement>(null);
 
     const customCategoryName = formData.categoryId.startsWith("__new__:")
@@ -195,7 +197,6 @@ export default function ItemEntryForm({
     };
 
     const handleGemstoneConfirm = (stoneWeight: number, stoneAmount: number) => {
-        setHasGemstone(true);
         onFormChange("stoneWeight", stoneWeight);
         onFormChange("stoneAmount", stoneAmount);
         onFormChange("stoneRate", 0);
@@ -611,7 +612,6 @@ export default function ItemEntryForm({
                                     if (e.target.checked) {
                                         setIsGemstoneModalOpen(true);
                                     } else {
-                                        setHasGemstone(false);
                                         onFormChange("stoneWeight", 0);
                                         onFormChange("stoneAmount", 0);
                                         onFormChange("stoneRate", 0);
@@ -696,12 +696,11 @@ export default function ItemEntryForm({
 
             <GemstoneModal
                 isOpen={isGemstoneModalOpen}
-                onClose={() => {
-                    setIsGemstoneModalOpen(false);
-                    if (!hasGemstone) setHasGemstone(false);
-                }}
+                onClose={() => setIsGemstoneModalOpen(false)}
                 onConfirm={handleGemstoneConfirm}
-                categories={categories} />
+                categories={categories}
+                existingStoneWeight={formData.stoneWeight}
+                existingStoneAmount={formData.stoneAmount} />
 
             <BeadsModal
                 isOpen={isBeadsModalOpen}

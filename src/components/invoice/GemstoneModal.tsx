@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Plus, Trash2, Gem, Settings } from "lucide-react";
 import { loadGemstonePresets, type GemstonePreset } from "@/lib/gemstoneRates";
 import { stoneRowAmount } from "@/shared/utils/stone";
@@ -25,6 +25,15 @@ interface GemstoneModalProps {
     onClose: () => void;
     onConfirm: (stoneWeight: number, stoneAmount: number, note: string) => void;
     categories?: Category[];
+    /** Stone weight/amount already attached to the item the modal is opened for.
+     *  Both 0 ⇒ a fresh item, so the row list must start empty (client #19). */
+    existingStoneWeight?: number;
+    existingStoneAmount?: number;
+}
+
+/** Grams represented by a row (carat rows convert at 0.2 g/ct). */
+function rowWeightG(r: StoneRow): number {
+    return r.unit === "ct" ? r.value * 0.2 : r.value;
 }
 
 let counter = 0;
@@ -43,15 +52,55 @@ function calcAmount(r: StoneRow): number {
     return stoneRowAmount(r);
 }
 
-export default function GemstoneModal({ isOpen, onClose, onConfirm, categories = [] }: GemstoneModalProps) {
+export default function GemstoneModal({
+    isOpen,
+    onClose,
+    onConfirm,
+    categories = [],
+    existingStoneWeight = 0,
+    existingStoneAmount = 0,
+}: GemstoneModalProps) {
     const [rows, setRows] = useState<StoneRow[]>([]);
     const [draft, setDraft] = useState<StoneRow>(() => mkRow());
     const [editingId, setEditingId] = useState<string | null>(null);
     const [presets, setPresets] = useState<GemstonePreset[]>([]);
 
+    // The modal stays mounted while closed, so its rows survive between openings.
+    // Latest rows kept in a ref so the open-effect can inspect them without
+    // re-running on every keystroke.
+    const rowsRef = useRef<StoneRow[]>(rows);
+    rowsRef.current = rows;
+    /** True once the reset decision has been made for the current opening. */
+    const handledOpenRef = useRef(false);
+
     useEffect(() => {
-        if (isOpen) setPresets(loadGemstonePresets());
-    }, [isOpen]);
+        if (!isOpen) {
+            handledOpenRef.current = false;
+            return;
+        }
+        setPresets(loadGemstonePresets());
+
+        if (handledOpenRef.current) return;
+        handledOpenRef.current = true;
+
+        // Keep the rows only when re-opening for the very item that produced them
+        // (i.e. they still add up to the stone weight/amount on the item). A fresh
+        // item — or a different item — must start from an empty list.
+        const current = rowsRef.current;
+        const rowsWeightG = current.reduce((s, r) => s + rowWeightG(r), 0);
+        const rowsAmount = current.reduce((s, r) => s + calcAmount(r), 0);
+        const itemHasGems = existingStoneWeight > 0 || existingStoneAmount > 0;
+        const rowsMatchItem =
+            current.length > 0 &&
+            Math.abs(rowsWeightG - existingStoneWeight) < 0.001 &&
+            Math.abs(rowsAmount - existingStoneAmount) < 0.5;
+
+        if (!itemHasGems || !rowsMatchItem) {
+            setRows([]);
+            setDraft(mkRow());
+            setEditingId(null);
+        }
+    }, [isOpen, existingStoneWeight, existingStoneAmount]);
 
     if (!isOpen) return null;
 
@@ -74,7 +123,7 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm, categories =
 
     const tagCaptionSuggestions = Array.from(new Set(categories.map(c => c.name)));
 
-    const totalWeightG   = rows.reduce((s, r) => s + (r.unit === "ct" ? r.value * 0.2 : r.value), 0);
+    const totalWeightG   = rows.reduce((s, r) => s + rowWeightG(r), 0);
     const gramRowsTotalG  = rows.filter(r => r.unit === "g").reduce((s, r) => s + r.value, 0);
     const caratRowsTotalCt = rows.filter(r => r.unit === "ct").reduce((s, r) => s + r.value, 0);
     const totalAmount   = rows.reduce((s, r) => s + calcAmount(r), 0);
@@ -96,7 +145,9 @@ export default function GemstoneModal({ isOpen, onClose, onConfirm, categories =
             .map(r => `${r.type} ${r.pieces}pc ${r.value}${r.unit}`)
             .join(", ");
         onConfirm(totalWeightG, totalAmount, note || "Gemstones");
-        setRows([mkRow()]);
+        // Rows are intentionally NOT cleared here: they are kept so re-opening the
+        // modal for the SAME item shows the gems for editing. The open-effect
+        // discards them as soon as the modal is opened for a different/fresh item.
         setDraft(mkRow());
         setEditingId(null);
         onClose();
