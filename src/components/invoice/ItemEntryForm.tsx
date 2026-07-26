@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, RotateCcw, Package, X, Gem } from "lucide-react";
+import { Plus, RotateCcw, Package, X, Gem, Pencil } from "lucide-react";
 import type { Category, ItemEntryFormData, MetalTypeOption } from "@/types";
 import { type KaatBasis, type LabourBasis } from "@/lib/calculationEngine";
 import { useProductTagSuggestions, assignProductTag } from "@/hooks/useProductTags";
@@ -199,6 +199,21 @@ export default function ItemEntryForm({
     const handleGemstoneConfirm = (stoneWeight: number, stoneAmount: number) => {
         onFormChange("stoneWeight", stoneWeight);
         onFormChange("stoneAmount", stoneAmount);
+        onFormChange("stoneRate", 0);
+    };
+
+    /** Untick "Gemstone" = drop the stones from the item. Confirm first: on an item
+     *  being re-edited these values came from the saved item, so a stray click here
+     *  would silently throw away the gem entry. */
+    const handleRemoveGemstone = () => {
+        if (formData.stoneWeight > 0 || formData.stoneAmount > 0) {
+            const ok = window.confirm(
+                "Remove the gemstones from this item? The stone weight and amount will be cleared."
+            );
+            if (!ok) return;
+        }
+        onFormChange("stoneWeight", 0);
+        onFormChange("stoneAmount", 0);
         onFormChange("stoneRate", 0);
     };
 
@@ -605,23 +620,36 @@ export default function ItemEntryForm({
                                 disabled={isDiamondCategory} />
                             Sample Gold
                         </label>
-                        <label className="form-checkbox" style={{ color: hasGemstone ? "var(--maroon)" : undefined }}>
-                            <input type="checkbox"
-                                checked={hasGemstone}
-                                onChange={e => {
-                                    if (e.target.checked) {
-                                        setIsGemstoneModalOpen(true);
-                                    } else {
-                                        onFormChange("stoneWeight", 0);
-                                        onFormChange("stoneAmount", 0);
-                                        onFormChange("stoneRate", 0);
-                                    }
-                                }}
-                                disabled={isDiamondCategory} />
-                            {hasGemstone && formData.stoneWeight > 0
-                                ? `Gem (${formData.stoneWeight.toFixed(2)}g)`
-                                : "Gemstone"}
-                        </label>
+                        {/* The tick only turns gems on/off. The pencil is the way INTO the
+                            modal and stays available while ticked, so an item that already
+                            has gems can be edited without clearing it first (#19). */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <label className="form-checkbox" style={{ color: hasGemstone ? "var(--maroon)" : undefined }}>
+                                <input type="checkbox"
+                                    checked={hasGemstone}
+                                    onChange={e => {
+                                        if (e.target.checked) {
+                                            setIsGemstoneModalOpen(true);
+                                        } else {
+                                            handleRemoveGemstone();
+                                        }
+                                    }}
+                                    disabled={isDiamondCategory} />
+                                {hasGemstone && formData.stoneWeight > 0
+                                    ? `Gem (${formData.stoneWeight.toFixed(2)}g)`
+                                    : "Gemstone"}
+                            </label>
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setIsGemstoneModalOpen(true)}
+                                disabled={isDiamondCategory}
+                                title={hasGemstone ? "Edit gemstones" : "Add gemstones"}
+                                style={{ padding: "1px 4px", minWidth: 0 }}
+                            >
+                                <Pencil size={11} />
+                            </button>
+                        </div>
                         <label className="form-checkbox" style={{ color: hasBeads ? "#92400e" : undefined }}>
                             <input type="checkbox"
                                 checked={hasBeads}

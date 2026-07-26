@@ -86,6 +86,12 @@ export default function GemstoneModal({
         // Keep the rows only when re-opening for the very item that produced them
         // (i.e. they still add up to the stone weight/amount on the item). A fresh
         // item — or a different item — must start from an empty list.
+        // LIMITATION: this is a totals-matching heuristic, not identity. Two items
+        // with the same stone weight AND amount are indistinguishable here, so the
+        // second one opens showing the first one's rows (same totals, possibly
+        // different stone types/captions). Editing then re-applies correct totals,
+        // so the item data stays right; only the row breakdown can be misleading.
+        // A proper fix is to persist the rows on the item (schema change).
         const current = rowsRef.current;
         const rowsWeightG = current.reduce((s, r) => s + rowWeightG(r), 0);
         const rowsAmount = current.reduce((s, r) => s + calcAmount(r), 0);
@@ -140,6 +146,12 @@ export default function GemstoneModal({
     };
 
     const handleConfirm = () => {
+        // Nothing entered ⇒ apply nothing. Writing 0/0 here would wipe the stone
+        // weight & amount of an item that was only opened for a look.
+        if (rows.length === 0) {
+            onClose();
+            return;
+        }
         const note = rows
             .filter(r => r.type.trim())
             .map(r => `${r.type} ${r.pieces}pc ${r.value}${r.unit}`)
@@ -490,7 +502,7 @@ export default function GemstoneModal({
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                         <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-                        <button className="btn btn-primary" onClick={handleConfirm} style={{ minWidth: 90 }}>
+                        <button className="btn btn-primary" onClick={handleConfirm} disabled={rows.length === 0} style={{ minWidth: 90 }}>
                             <Gem size={13} /> Apply to Item
                         </button>
                     </div>
