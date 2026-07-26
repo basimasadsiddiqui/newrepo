@@ -8,7 +8,8 @@
  * - Drag & drop upload area
  * - Auto compression before upload (browser-image-compression)
  * - Preview thumbnails grid
- * - Click to preview full-size in modal
+ * - Click to preview full-size in modal, with prev/next arrows,
+ *   ArrowLeft / ArrowRight / Escape keyboard navigation and an "n / total" counter
  * - Delete photos
  *
  * For Phase 1, photos are stored locally. Cloud storage (S3/Cloudinary)
@@ -18,8 +19,8 @@
 
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { Camera, X, Upload, ZoomIn } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Camera, X, Upload, ZoomIn, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PhotoSystemProps {
     /** Current photos (URLs or base64 strings) */
@@ -33,15 +34,74 @@ interface PhotoSystemProps {
     onPhotosChange: (photos: string[]) => void;
 }
 
+/** Shared style for the prev/next arrows in the preview lightbox. */
+const navButtonStyle: React.CSSProperties = {
+    background: "rgba(255,255,255,0.9)",
+    border: "none",
+    borderRadius: "50%",
+    width: "40px",
+    height: "40px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    color: "var(--maroon)",
+    boxShadow: "var(--shadow-md)",
+    flexShrink: 0,
+};
+
 export default function PhotoSystem({
     photos,
     label = "Invoice Photos",
     maxPhotos = 10,
     onPhotosChange,
 }: PhotoSystemProps) {
-    const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+    // Track the previewed image by INDEX (not by value) so we can step through
+    // the attachments with the keyboard / arrow buttons.
+    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Clamp on read so removing the previewed photo can never leave a dangling index.
+    const safeIndex =
+        previewIndex === null || photos.length === 0
+            ? null
+            : Math.min(Math.max(previewIndex, 0), photos.length - 1);
+    const isPreviewOpen = safeIndex !== null;
+
+    const closePreview = useCallback(() => setPreviewIndex(null), []);
+
+    /** Step through the photos, wrapping around at both ends. */
+    const stepPreview = useCallback(
+        (delta: number) => {
+            setPreviewIndex((current) => {
+                if (current === null || photos.length === 0) return current;
+                return (current + delta + photos.length) % photos.length;
+            });
+        },
+        [photos.length]
+    );
+
+    // Keyboard navigation — only bound while the preview is open, removed on close/unmount.
+    useEffect(() => {
+        if (!isPreviewOpen) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                stepPreview(-1);
+            } else if (e.key === "ArrowRight") {
+                e.preventDefault();
+                stepPreview(1);
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                closePreview();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [isPreviewOpen, stepPreview, closePreview]);
 
     /**
      * Handle file selection (from input or drag-drop).
@@ -191,7 +251,7 @@ export default function PhotoSystem({
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                setPreviewPhoto(photo);
+                                                setPreviewIndex(index);
                                             }}
                                             style={{
                                                 background: "white",
@@ -235,10 +295,10 @@ export default function PhotoSystem({
                 </div>
             </div>
 
-            {/* ── Preview Modal ─────────────────────────── */}
-            {previewPhoto && (
+            {/* ── Preview Modal (arrow keys / arrow buttons navigate) ─────── */}
+            {isPreviewOpen && (
                 <div
-                    onClick={() => setPreviewPhoto(null)}
+                    onClick={closePreview}
                     style={{
                         position: "fixed",
                         inset: 0,
@@ -246,19 +306,39 @@ export default function PhotoSystem({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        gap: "12px",
                         zIndex: 100,
                         cursor: "pointer",
                     }}
                 >
+                    {/* Previous */}
+                    {photos.length > 1 && (
+                        <button
+                            aria-label="Previous image"
+                            title="Previous image (←)"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                stepPreview(-1);
+                            }}
+                            style={navButtonStyle}
+                        >
+                            <ChevronLeft size={22} />
+                        </button>
+                    )}
+
                     <div
+                        onClick={(e) => e.stopPropagation()}
                         style={{
-                            maxWidth: "90vw",
+                            maxWidth: "80vw",
                             maxHeight: "90vh",
                             position: "relative",
+                            cursor: "default",
                         }}
                     >
                         <button
-                            onClick={() => setPreviewPhoto(null)}
+                            aria-label="Close preview"
+                            title="Close (Esc)"
+                            onClick={closePreview}
                             style={{
                                 position: "absolute",
                                 top: "-12px",
@@ -279,8 +359,8 @@ export default function PhotoSystem({
                         </button>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src={previewPhoto}
-                            alt="Preview"
+                            src={photos[safeIndex]}
+                            alt={`Preview ${safeIndex + 1} of ${photos.length}`}
                             style={{
                                 maxWidth: "100%",
                                 maxHeight: "85vh",
@@ -288,7 +368,41 @@ export default function PhotoSystem({
                                 boxShadow: "var(--shadow-lg)",
                             }}
                         />
+                        {/* Position indicator */}
+                        <div
+                            style={{
+                                position: "absolute",
+                                bottom: "8px",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                background: "rgba(0,0,0,0.65)",
+                                color: "white",
+                                borderRadius: "var(--radius-full, 999px)",
+                                padding: "3px 12px",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                letterSpacing: "0.04em",
+                                pointerEvents: "none",
+                            }}
+                        >
+                            {safeIndex + 1} / {photos.length}
+                        </div>
                     </div>
+
+                    {/* Next */}
+                    {photos.length > 1 && (
+                        <button
+                            aria-label="Next image"
+                            title="Next image (→)"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                stepPreview(1);
+                            }}
+                            style={navButtonStyle}
+                        >
+                            <ChevronRight size={22} />
+                        </button>
+                    )}
                 </div>
             )}
         </>
