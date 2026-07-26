@@ -389,6 +389,9 @@ export function calculateInvoiceSummary(params: {
     pasaPercent: number;
 }): {
     totalGoldWeight: number;
+    /** Sum of the line-item totals only — before charges/discount. */
+    itemsSubtotal: number;
+    /** Grand total = itemsSubtotal + otherCharges − discount. */
     totalAmount: number;
     customerGoldValue: number;
     pasaDeduction: number;
@@ -400,10 +403,19 @@ export function calculateInvoiceSummary(params: {
         0
     );
 
-    const totalAmount = params.items.reduce(
+    const itemsSubtotal = params.items.reduce(
         (sum, item) => new Decimal(sum).plus(item.totalAmount).toNumber(),
         0
     );
+
+    // Client (#15/#16): Other Charges and Discount must move the Total Amount,
+    // on SALE *and* PURCHASE invoices. Callers pass these already resolved to
+    // rupees (a gold-gram entry is converted at the gold rate before it gets here).
+    const totalAmount = new Decimal(itemsSubtotal)
+        .plus(params.otherCharges)
+        .minus(params.discount)
+        .toDecimalPlaces(4)
+        .toNumber();
 
     const customerGoldValue = calcOldGoldValue(
         params.customerGoldWeight,
@@ -417,9 +429,9 @@ export function calculateInvoiceSummary(params: {
         params.goldRatePerGram
     );
 
+    // Balance is unchanged in value: charges/discount are now folded into
+    // totalAmount instead of being added here a second time.
     const balance = new Decimal(totalAmount)
-        .plus(params.otherCharges)
-        .minus(params.discount)
         .minus(params.cashReceived)
         .minus(params.goldReceived)
         .minus(customerGoldValue)
@@ -429,6 +441,7 @@ export function calculateInvoiceSummary(params: {
 
     return {
         totalGoldWeight,
+        itemsSubtotal,
         totalAmount,
         customerGoldValue,
         pasaDeduction,

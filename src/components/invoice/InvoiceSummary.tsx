@@ -5,9 +5,10 @@
  *
  * Bottom section showing:
  * - Total Gold Weight
- * - Total Amount
+ * - Items Subtotal
  * - Other Charges (editable)
  * - Discount (editable)
+ * - Total Amount  (= Items Subtotal + Other Charges − Discount)
  * - Customer Gold Value (auto)
  * - Pasa Deduction (auto)
  * - Cash Received (editable)
@@ -114,9 +115,16 @@ interface InvoiceSummaryProps {
     /** All monetary and weight totals */
     totalGoldWeight: number;
     totalPureGoldWeight?: number;
+    /** Sum of the line items only, before charges/discount. */
+    itemsSubtotal?: number;
+    /** Grand total = itemsSubtotal + otherCharges − discount. */
     totalAmount: number;
     otherCharges: number;
     discount: number;
+    /** Rupee value of Other Charges / Discount actually applied to the total.
+     *  Differs from `otherCharges`/`discount` when the Gold-g mode is used. */
+    otherChargesRs?: number;
+    discountRs?: number;
     /** Rs/Gold mode for charges & discount (purchase). Defaults to rupees. */
     otherChargesMode?: "RS" | "GOLD";
     otherChargesWeight?: number;
@@ -155,9 +163,12 @@ export default function InvoiceSummary({
     currency = "PKR",
     totalGoldWeight,
     totalPureGoldWeight = 0,
+    itemsSubtotal,
     totalAmount,
     otherCharges,
     discount,
+    otherChargesRs,
+    discountRs,
     otherChargesMode = "RS",
     otherChargesWeight = 0,
     discountMode = "RS",
@@ -189,6 +200,14 @@ export default function InvoiceSummary({
     // Amounts shown here are already in the entry currency (user enters foreign,
     // PKR conversion happens at save) — so we only swap the symbol for display.
     const sym = getCurrencySymbol(currency);
+
+    // The rupee amounts that actually move the total. In "Gold g" mode the parent
+    // passes the converted rupee value; fall back to the raw rupee field otherwise.
+    const appliedOtherCharges = otherChargesRs ?? otherCharges;
+    const appliedDiscount = discountRs ?? discount;
+    // Older callers may not pass itemsSubtotal — derive it so the breakdown still adds up.
+    const subtotal = itemsSubtotal ?? (totalAmount - appliedOtherCharges + appliedDiscount);
+
     return (
         <div
             style={{
@@ -315,11 +334,13 @@ export default function InvoiceSummary({
                         )
                     )}
 
-                    {/* Total Amount */}
+                    {/* Items Subtotal — the plain sum of the line items, before
+                        charges/discount. Shown so the Total Amount arithmetic below
+                        is visible to the user (client #15/#16). */}
                     <div className="summary-row">
-                        <span className="label">Total Amount</span>
-                        <span className="value" style={{ color: "var(--maroon)" }}>
-                            {sym} {formatCurrency(totalAmount)}
+                        <span className="label">Items Subtotal</span>
+                        <span className="value">
+                            {sym} {formatCurrency(subtotal)}
                         </span>
                     </div>
 
@@ -350,6 +371,37 @@ export default function InvoiceSummary({
                         onModeChange: onDiscountModeChange,
                         onWeightChange: onDiscountWeightChange,
                     })}
+
+                    {/* Applied charge / discount echo — makes the arithmetic explicit,
+                        especially when the value was entered in Gold g. */}
+                    {appliedOtherCharges > 0 && (
+                        <div className="summary-row" style={{ paddingTop: 3, paddingBottom: 3 }}>
+                            <span className="label" style={{ fontSize: "0.72rem" }}>
+                                + Other Charges applied
+                            </span>
+                            <span className="value" style={{ fontSize: "0.75rem" }}>
+                                + {sym} {formatCurrency(appliedOtherCharges)}
+                            </span>
+                        </div>
+                    )}
+                    {appliedDiscount > 0 && (
+                        <div className="summary-row" style={{ paddingTop: 3, paddingBottom: 3 }}>
+                            <span className="label" style={{ fontSize: "0.72rem", color: "var(--success)" }}>
+                                − Discount applied
+                            </span>
+                            <span className="value" style={{ fontSize: "0.75rem", color: "var(--success)" }}>
+                                - {sym} {formatCurrency(appliedDiscount)}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Total Amount = Items Subtotal + Other Charges − Discount */}
+                    <div className="summary-row total">
+                        <span className="label">Total Amount</span>
+                        <span className="value">
+                            {sym} {formatCurrency(totalAmount)}
+                        </span>
+                    </div>
 
                     {/* Old Gold Value */}
                     {customerGoldValue > 0 && (

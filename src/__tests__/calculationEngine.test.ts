@@ -224,9 +224,26 @@ const summary = calculateInvoiceSummary({
 });
 
 assertClose(summary.totalGoldWeight, 12, 0.001, "Total gold weight = 12g");
-assertClose(summary.totalAmount, 125000, 0.01, "Total = 50k + 75k = 125k");
+assertClose(summary.itemsSubtotal, 125000, 0.01, "Items subtotal = 50k + 75k = 125k");
+// #15/#16 — Other Charges and Discount must move the Total Amount
+assertClose(summary.totalAmount, 125500, 0.01, "Total = 125k + 1000 charges − 500 discount");
 assert(summary.customerGoldValue > 0, "Old gold value > 0");
 assert(summary.balance < summary.totalAmount, "Balance < total");
+
+// Charges/discount must not be double-counted in the balance
+const summaryNoAdj = calculateInvoiceSummary({
+    items: [{ totalAmount: 100000, estimatedGoldWeight: 10 }],
+    otherCharges: 0,
+    discount: 0,
+    cashReceived: 0,
+    goldReceived: 0,
+    customerGoldWeight: 0,
+    customerGoldCarat: 24,
+    goldRatePerGram: perGram,
+    pasaPercent: 0,
+});
+assertClose(summaryNoAdj.totalAmount, 100000, 0.01, "No charges/discount → total = items subtotal");
+assertClose(summaryNoAdj.balance, 100000, 0.01, "Balance = total when nothing received");
 
 // ─── Results ───────────────────────────────────────────────────
 

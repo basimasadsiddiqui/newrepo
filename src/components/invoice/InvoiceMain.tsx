@@ -1447,7 +1447,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         partyMobile,
         items,
         totalGoldWeight: invoiceSummary.totalGoldWeight,
-        totalAmount: invoiceSummary.totalAmount,
+        // PDF prints this as "Items Total" and lists charges/discount separately,
+        // so it must stay the pre-charge subtotal.
+        totalAmount: invoiceSummary.itemsSubtotal,
         otherCharges,
         discount,
         partyGoldValue,
@@ -1682,9 +1684,12 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         currency={currency}
         totalGoldWeight={invoiceSummary.totalGoldWeight}
         totalPureGoldWeight={totalPureGoldWeight}
+        itemsSubtotal={invoiceSummary.itemsSubtotal}
         totalAmount={invoiceSummary.totalAmount}
         otherCharges={otherCharges}
         discount={discount}
+        otherChargesRs={otherChargesRs}
+        discountRs={discountRs}
         otherChargesMode={otherChargesMode}
         otherChargesWeight={otherChargesWeight}
         discountMode={discountMode}
