@@ -286,7 +286,10 @@ export async function PUT(req: NextRequest, context: RouteParams) {
                     pasaDeduction: serverSummary.pasaDeduction || null,
                     totalGoldWeight: serverSummary.totalGoldWeight || 0,
                     totalPureGoldWeight: totalPureGoldWeight || 0,
-                    totalAmount: serverSummary.totalAmount || 0,
+                    // totalAmount = items subtotal (unchanged meaning, see POST route);
+                    // netTotal = grand total after charges/discount.
+                    totalAmount: serverSummary.itemsSubtotal || 0,
+                    netTotal: serverSummary.totalAmount || 0,
                     otherCharges: toNumber(otherCharges, 0),
                     otherChargesMode: otherChargesMode === "GOLD" ? "GOLD" : "RS",
                     otherChargesWeight: toNumber(otherChargesWeight, 0),

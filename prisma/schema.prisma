@@ -172,7 +172,8 @@ model Invoice {
   labourRate         Decimal?        @db.Decimal(14, 4)
   totalGoldWeight    Decimal         @default(0) @db.Decimal(14, 4)
   totalPureGoldWeight Decimal        @default(0) @db.Decimal(14, 4)
-  totalAmount        Decimal         @default(0) @db.Decimal(14, 4)
+  totalAmount        Decimal         @default(0) @db.Decimal(14, 4) // Items subtotal, BEFORE otherCharges/discount
+  netTotal           Decimal?        @db.Decimal(14, 4) // Grand total = totalAmount + otherCharges - discount. NULL on rows written before this column existed.
   otherCharges       Decimal         @default(0) @db.Decimal(14, 4)
   otherChargesMode   String          @default("RS") // "RS" = rupees, "GOLD" = pure gold grams
   otherChargesWeight Decimal         @default(0) @db.Decimal(14, 4)

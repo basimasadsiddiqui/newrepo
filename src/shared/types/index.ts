@@ -185,7 +185,11 @@ export interface Invoice {
 
     totalGoldWeight: number;
     totalPureGoldWeight?: number;
+    /** Items subtotal, before otherCharges/discount. */
     totalAmount: number;
+    /** Grand total = totalAmount + otherCharges − discount.
+     *  null on invoices saved before the column existed — fall back to totalAmount. */
+    netTotal?: number | null;
     otherCharges: number;
     discount: number;
     cashReceived: number;

@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
             data: invoices.map((inv) => ({
                 ...inv,
                 totalAmount: inv.totalAmount.toString(),
+                netTotal: inv.netTotal?.toString() ?? null,
                 balance: inv.balance.toString(),
                 date: inv.date.toISOString(),
             })),
@@ -276,7 +277,11 @@ export async function POST(req: NextRequest) {
                 pasaDeduction: serverSummary.pasaDeduction || null,
                 totalGoldWeight: serverSummary.totalGoldWeight || 0,
                 totalPureGoldWeight: totalPureGoldWeight || 0,
-                totalAmount: serverSummary.totalAmount || 0,
+                // totalAmount stays the items subtotal — it is what every historical
+                // row holds and what the reporting aggregates sum. The grand total
+                // (subtotal + charges - discount) goes in its own column.
+                totalAmount: serverSummary.itemsSubtotal || 0,
+                netTotal: serverSummary.totalAmount || 0,
                 otherCharges: otherCharges || 0,
                 otherChargesMode: otherChargesMode === "GOLD" ? "GOLD" : "RS",
                 otherChargesWeight: otherChargesWeight || 0,

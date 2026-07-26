@@ -199,7 +199,7 @@ export default function InvoiceHistoryPage() {
                                             {Number(inv.totalPureGoldWeight) > 0 ? formatWeight(Number(inv.totalPureGoldWeight)) : "—"}
                                         </td>
                                         <td className="px-6 py-4 font-mono">
-                                            {formatCurrency(Number(inv.totalAmount))}
+                                            {formatCurrency(Number(inv.netTotal ?? inv.totalAmount))}
                                         </td>
                                         <td className="px-6 py-4 font-mono text-muted-foreground">
                                             {formatCurrency(Number(inv.balance))}
