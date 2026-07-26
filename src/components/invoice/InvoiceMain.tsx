@@ -1450,8 +1450,10 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         // PDF prints this as "Items Total" and lists charges/discount separately,
         // so it must stay the pre-charge subtotal.
         totalAmount: invoiceSummary.itemsSubtotal,
-        otherCharges,
-        discount,
+        // Resolved to rupees: in Gold-g mode `otherCharges`/`discount` hold the
+        // raw gram entry, which would print as 0/stale next to a converted total.
+        otherCharges: otherChargesRs,
+        discount: discountRs,
         partyGoldValue,
         pasaDeduction,
         cashReceived,
@@ -1476,7 +1478,7 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
       console.error('InvoiceMain: PDF generation error', err);
       toast.error('PDF generation failed — check console');
     }
-  }, [orderNumber, date, receiptNo, transactionType, partyName, partyMobile, items, invoiceSummary, otherCharges, discount, partyGoldValue, pasaDeduction, cashReceived, goldReceived, remarks, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, rateType, intlOunceRate, currency, photos, saveToDb]);
+  }, [orderNumber, date, receiptNo, transactionType, partyName, partyMobile, items, invoiceSummary, otherChargesRs, discountRs, partyGoldValue, pasaDeduction, cashReceived, goldReceived, remarks, goldRate, polishBasis, polishRate, labourBasis, labourRate, kaatBasis, kaatRate, rateType, intlOunceRate, currency, photos, saveToDb]);
   const handleSendWhatsApp = useCallback(() => { toast("WhatsApp — requires API key", { icon: "💬" }); }, []);
   const handleCancelOrder = useCallback(() => { setStatus("CANCELLED"); toast.error("Invoice cancelled"); }, []);
 

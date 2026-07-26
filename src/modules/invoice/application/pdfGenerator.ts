@@ -326,6 +326,7 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
             ["Total Kaat Weight :",      `${data.items.reduce((s, i) => s + (i.kaatWeight ?? 0), 0).toFixed(3)} g`],
             ["Net Pure Weight :",        `${data.items.reduce((s, i) => s + i.adjustedGoldWeight, 0).toFixed(3)} g`],
             ["Total Stone Weight :",     `${data.items.reduce((s, i) => s + i.stoneWeight, 0).toFixed(3)} g`],
+            ["Items Total :",            `${cur}${fmtNum(data.totalAmount)}`],
           ]
         : [
             ["Total Gold Wt :",          `${data.totalGoldWeight.toFixed(3)} g`],
@@ -340,6 +341,12 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
         if (data.partyGoldValue > 0) summaryLines.push(["Old Gold Value :",  `- ${cur}${fmtNum(data.partyGoldValue)}`]);
         if (data.pasaDeduction  > 0) summaryLines.push(["Pasa Deduction :", `- ${cur}${fmtNum(data.pasaDeduction)}`]);
         if (data.cashReceived  > 0) summaryLines.push(["Cash Received :",   `${cur}${fmtNum(data.cashReceived)}`]);
+    } else {
+        // Client #15/#16: the purchase invoice is the document the charges/discount
+        // were missing from, so it must show the arithmetic and the grand total.
+        if (data.otherCharges > 0) summaryLines.push(["Other Charges :", `+ ${cur}${fmtNum(data.otherCharges)}`]);
+        if (data.discount     > 0) summaryLines.push(["Discount :",      `- ${cur}${fmtNum(data.discount)}`]);
+        summaryLines.push(["Total Amount :", `${cur}${fmtNum(data.totalAmount + data.otherCharges - data.discount)}`]);
     }
 
     const SUM_LH  = 5.4;
