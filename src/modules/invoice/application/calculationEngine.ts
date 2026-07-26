@@ -411,9 +411,14 @@ export function calculateInvoiceSummary(params: {
     // Client (#15/#16): Other Charges and Discount must move the Total Amount,
     // on SALE *and* PURCHASE invoices. Callers pass these already resolved to
     // rupees (a gold-gram entry is converted at the gold rate before it gets here).
-    const totalAmount = new Decimal(itemsSubtotal)
-        .plus(params.otherCharges)
-        .minus(params.discount)
+    // Clamped at 0: a discount bigger than the subtotal is a data-entry slip, and a
+    // negative total is written straight into the payment ledger as the amount owed.
+    // Clamping (rather than rejecting) matches how the numeric inputs treat
+    // out-of-range values elsewhere in the invoice screen.
+    const totalAmount = Decimal.max(
+        0,
+        new Decimal(itemsSubtotal).plus(params.otherCharges).minus(params.discount)
+    )
         .toDecimalPlaces(4)
         .toNumber();
 

@@ -245,6 +245,58 @@ const summaryNoAdj = calculateInvoiceSummary({
 assertClose(summaryNoAdj.totalAmount, 100000, 0.01, "No charges/discount → total = items subtotal");
 assertClose(summaryNoAdj.balance, 100000, 0.01, "Balance = total when nothing received");
 
+// A discount bigger than the subtotal must not produce a negative total — that value
+// is persisted as netTotal and used as the amount owed in the payment ledger.
+const summaryOverDiscount = calculateInvoiceSummary({
+    items: [{ totalAmount: 50000, estimatedGoldWeight: 5 }],
+    otherCharges: 0,
+    discount: 100000,
+    cashReceived: 0,
+    goldReceived: 0,
+    customerGoldWeight: 0,
+    customerGoldCarat: 24,
+    goldRatePerGram: perGram,
+    pasaPercent: 0,
+});
+assertClose(summaryOverDiscount.itemsSubtotal, 50000, 0.01, "Over-discount leaves the subtotal alone");
+assert(summaryOverDiscount.totalAmount === 0, "Discount > subtotal clamps the total to 0 (not negative)");
+assert(summaryOverDiscount.balance === 0, "Clamped total leaves a 0 balance, not a negative receivable");
+
+// Exactly cancelling out is a valid 0, not a clamp artefact
+const summaryZeroTotal = calculateInvoiceSummary({
+    items: [{ totalAmount: 10000, estimatedGoldWeight: 1 }],
+    otherCharges: 500,
+    discount: 10500,
+    cashReceived: 0,
+    goldReceived: 0,
+    customerGoldWeight: 0,
+    customerGoldCarat: 24,
+    goldRatePerGram: perGram,
+    pasaPercent: 0,
+});
+assert(summaryZeroTotal.totalAmount === 0, "Charges − discount cancelling the subtotal gives exactly 0");
+
+// The clamp must not fire on ordinary discounts
+const summaryUnderDiscount = calculateInvoiceSummary({
+    items: [{ totalAmount: 50000, estimatedGoldWeight: 5 }],
+    otherCharges: 250,
+    discount: 49999,
+    cashReceived: 0,
+    goldReceived: 0,
+    customerGoldWeight: 0,
+    customerGoldCarat: 24,
+    goldRatePerGram: perGram,
+    pasaPercent: 0,
+});
+assertClose(summaryUnderDiscount.totalAmount, 251, 0.01, "Discount just under the subtotal is not clamped");
+
+// What the invoice routes persist: Invoice.totalAmount keeps its original meaning
+// (items subtotal, so historical rows and the reporting aggregates stay comparable)
+// and the grand total goes into the new Invoice.netTotal column.
+assertClose(summary.itemsSubtotal, 125000, 0.01, "Persisted totalAmount = items subtotal");
+assertClose(summary.totalAmount, 125500, 0.01, "Persisted netTotal = grand total");
+assert(summary.totalAmount !== summary.itemsSubtotal, "netTotal differs from totalAmount once charges/discount exist");
+
 // ─── Results ───────────────────────────────────────────────────
 
 console.log(`\n${"═".repeat(50)}`);
