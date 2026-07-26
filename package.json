@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "npx tsx src/__tests__/calculationEngine.test.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down",
     "db:migrate": "npx prisma migrate deploy",

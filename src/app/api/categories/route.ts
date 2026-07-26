@@ -95,12 +95,17 @@ export async function PATCH(req: NextRequest) {
             );
         }
 
-        // Category has @@unique([orgId, name]) — reject a colliding rename up front
+        // Category has @@unique([orgId, name]) — reject a colliding rename up front.
+        // Only live categories count: an archived one is invisible in the picker, so
+        // blocking a rename on it would look like an unexplained failure. The row
+        // being renamed is excluded, which is what allows a case-only fix ("ring" →
+        // "Ring") to go through.
         const duplicate = await prisma.category.findFirst({
             where: {
                 orgId: ORG_ID,
                 name: { equals: trimmedName, mode: "insensitive" },
                 id: { not: id },
+                isActive: true,
             },
             select: { id: true },
         });
@@ -123,6 +128,14 @@ export async function PATCH(req: NextRequest) {
         });
     } catch (error) {
         console.error("PATCH /api/categories error:", error);
+        // The unique index spans archived categories too, which the check above
+        // deliberately skips — report that collision instead of a bare 500.
+        if ((error as { code?: string })?.code === "P2002") {
+            return NextResponse.json(
+                { success: false, error: "An archived category already uses that name" },
+                { status: 409 }
+            );
+        }
         return NextResponse.json(
             { success: false, error: "Failed to update category" },
             { status: 500 }

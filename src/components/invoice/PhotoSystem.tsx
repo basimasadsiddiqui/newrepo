@@ -87,6 +87,12 @@ export default function PhotoSystem({
         if (!isPreviewOpen) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Don't steal arrows/Escape from a field the user is typing in
+            const t = e.target as HTMLElement | null;
+            if (t) {
+                const tag = t.tagName;
+                if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
+            }
             if (e.key === "ArrowLeft") {
                 e.preventDefault();
                 stepPreview(-1);
