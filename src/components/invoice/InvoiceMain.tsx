@@ -1450,6 +1450,9 @@ export default function InvoiceMain({ defaultTransactionType, hideToggle = false
         // PDF prints this as "Items Total" and lists charges/discount separately,
         // so it must stay the pre-charge subtotal.
         totalAmount: invoiceSummary.itemsSubtotal,
+        // Grand total, clamped at 0 by the engine — the PDF prints this instead
+        // of recomputing subtotal + charges − discount for itself.
+        netTotal: invoiceSummary.totalAmount,
         // Resolved to rupees: in Gold-g mode `otherCharges`/`discount` hold the
         // raw gram entry, which would print as 0/stale next to a converted total.
         otherCharges: otherChargesRs,

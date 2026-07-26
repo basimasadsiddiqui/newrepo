@@ -11,9 +11,14 @@ interface PdfInvoiceData {
     partyMobile: string;
     items: InvoiceItem[];
     totalGoldWeight: number;
+    /** Items subtotal — printed as "Items Total", before charges/discount. */
     totalAmount: number;
     otherCharges: number;
     discount: number;
+    /** Grand total (subtotal + charges − discount), already clamped at 0 by
+     *  calculateInvoiceSummary. Single source of truth for the printed total;
+     *  optional only so a caller that predates it still compiles. */
+    netTotal?: number;
     partyGoldValue: number;
     pasaDeduction: number;
     cashReceived: number;
@@ -346,7 +351,13 @@ export async function generateInvoicePdf(data: PdfInvoiceData): Promise<void> {
         // were missing from, so it must show the arithmetic and the grand total.
         if (data.otherCharges > 0) summaryLines.push(["Other Charges :", `+ ${cur}${fmtNum(data.otherCharges)}`]);
         if (data.discount     > 0) summaryLines.push(["Discount :",      `- ${cur}${fmtNum(data.discount)}`]);
-        summaryLines.push(["Total Amount :", `${cur}${fmtNum(data.totalAmount + data.otherCharges - data.discount)}`]);
+        // Use the total the engine already clamped at 0 rather than redoing the
+        // arithmetic here — recomputing printed a negative total when the
+        // discount exceeded the subtotal, contradicting the screen.
+        const grandTotal = data.netTotal ?? Math.max(0, data.totalAmount + data.otherCharges - data.discount);
+        // A zero grand total is a real figure (discount ≥ subtotal), not a blank
+        // cell, so it must not print as fmtNum's em-dash placeholder.
+        summaryLines.push(["Total Amount :", `${cur}${grandTotal > 0 ? fmtNum(grandTotal) : "0"}`]);
     }
 
     const SUM_LH  = 5.4;
