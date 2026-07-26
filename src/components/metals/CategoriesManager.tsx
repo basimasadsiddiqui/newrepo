@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, X, Pencil, Check } from "lucide-react";
 
 // Jewellery-specific category taxonomy with emoji, description, associated metals
 const JEWELLERY_CATEGORIES = [
@@ -36,6 +36,10 @@ export default function CategoriesManager({ categories }: { categories: Category
     const [isAdding, setIsAdding] = useState(false);
     const [newName, setNewName] = useState("");
     const [isSaving, setIsSaving] = useState(false);
+    // Inline rename (client #8 — fix a mis-spelled custom category)
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editingName, setEditingName] = useState("");
+    const [isRenaming, setIsRenaming] = useState(false);
 
     const filtered = allCategories.filter((c) =>
         c.name.toLowerCase().includes(search.toLowerCase())
@@ -67,6 +71,47 @@ export default function CategoriesManager({ categories }: { categories: Category
             toast.error("Network error");
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const startRename = (cat: CategoryDisplay) => {
+        setEditingId(cat.id);
+        setEditingName(cat.name);
+    };
+
+    const cancelRename = () => {
+        setEditingId(null);
+        setEditingName("");
+    };
+
+    const handleRename = async (cat: CategoryDisplay) => {
+        const name = editingName.trim();
+        if (!name) { toast.error("Enter a category name"); return; }
+        if (name === cat.name) { cancelRename(); return; }
+        // Same duplicate guard as handleAdd — the API enforces it server-side too
+        if (allCategories.some((c) => c.id !== cat.id && c.name.toLowerCase() === name.toLowerCase())) {
+            toast.error("Category already exists"); return;
+        }
+        setIsRenaming(true);
+        try {
+            const res = await fetch("/api/categories", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: cat.id, name }),
+            });
+            const data = await res.json() as { success?: boolean; data?: CategoryDisplay; error?: string };
+            if (data.success && data.data) {
+                const updated = data.data;
+                setAllCategories((prev) => prev.map((c) => (c.id === cat.id ? { ...c, name: updated.name } : c)));
+                toast.success(`Renamed to "${updated.name}"`);
+                cancelRename();
+            } else {
+                toast.error(data.error || "Failed to rename");
+            }
+        } catch {
+            toast.error("Network error");
+        } finally {
+            setIsRenaming(false);
         }
     };
 
@@ -138,13 +183,59 @@ export default function CategoriesManager({ categories }: { categories: Category
                                 const preset = JEWELLERY_CATEGORIES.find(
                                     (p) => p.name.toLowerCase() === cat.name.toLowerCase()
                                 );
+                                const isEditing = editingId === cat.id;
                                 return (
-                                    <div key={cat.id} className="category-card">
+                                    <div key={cat.id} className="category-card" style={{ position: "relative" }}>
                                         <div className="category-icon">
                                             {preset?.emoji || "🏷️"}
                                         </div>
-                                        <div>
-                                            <div className="category-name">{cat.name}</div>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            {isEditing ? (
+                                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                                    <input
+                                                        type="text"
+                                                        value={editingName}
+                                                        onChange={(e) => setEditingName(e.target.value)}
+                                                        className="form-input"
+                                                        style={{ height: "28px", fontSize: "0.75rem", minWidth: 0 }}
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") handleRename(cat);
+                                                            if (e.key === "Escape") cancelRename();
+                                                        }}
+                                                    />
+                                                    <button
+                                                        className="btn btn-primary btn-sm"
+                                                        style={{ padding: "2px 6px" }}
+                                                        title="Save name"
+                                                        disabled={isRenaming}
+                                                        onClick={() => handleRename(cat)}
+                                                    >
+                                                        <Check size={12} />
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-ghost btn-sm"
+                                                        style={{ padding: "2px 6px" }}
+                                                        title="Cancel"
+                                                        onClick={cancelRename}
+                                                    >
+                                                        <X size={12} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="category-name" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    {cat.name}
+                                                    <button
+                                                        className="btn btn-ghost btn-sm"
+                                                        style={{ padding: "1px 4px", color: "var(--text-muted)" }}
+                                                        title="Rename category"
+                                                        aria-label={`Rename ${cat.name}`}
+                                                        onClick={() => startRename(cat)}
+                                                    >
+                                                        <Pencil size={11} />
+                                                    </button>
+                                                </div>
+                                            )}
                                             {preset && (
                                                 <div className="category-desc">{preset.desc}</div>
                                             )}
