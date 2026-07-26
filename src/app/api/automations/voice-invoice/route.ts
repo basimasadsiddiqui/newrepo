@@ -194,7 +194,12 @@ async function createDraftInvoice(parsed: Awaited<ReturnType<typeof parseTranscr
             cashReceived: parsed.cashReceived ?? 0,
             discount: parsed.discount ?? 0,
             totalGoldWeight: summary.totalGoldWeight,
-            totalAmount: summary.totalAmount,
+            // Same column meaning as the POST/PUT invoice routes:
+            // totalAmount = items subtotal, netTotal = grand total after
+            // charges/discount. Writing the grand total into totalAmount here
+            // would put two different meanings in one column again.
+            totalAmount: summary.itemsSubtotal,
+            netTotal: summary.totalAmount,
             balance: summary.balance,
             items: { create: computedItems },
         },

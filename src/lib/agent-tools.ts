@@ -71,7 +71,7 @@ export const ALL_TOOLS: AgentTool[] = [
             },
         },
         execute: async ({ partyName, status, type: txType, limit = 10 }) => {
-            return prisma.invoice.findMany({
+            const rows = await prisma.invoice.findMany({
                 where: {
                     orgId: ORG_ID,
                     ...(status ? { status: status as "DRAFT" | "FINALIZED" | "CANCELLED" } : {}),
@@ -82,9 +82,16 @@ export const ALL_TOOLS: AgentTool[] = [
                 take: Number(limit),
                 select: {
                     orderNumber: true, date: true, status: true, transactionType: true,
-                    partyName: true, totalAmount: true, balance: true,
+                    partyName: true, totalAmount: true, netTotal: true, balance: true,
                 },
             });
+            // totalAmount is the items subtotal; the invoice total the model
+            // should quote is netTotal (NULL on rows written before that column,
+            // where totalAmount still held the grand total).
+            return rows.map(({ netTotal, totalAmount, ...rest }) => ({
+                ...rest,
+                totalAmount: netTotal ?? totalAmount,
+            }));
         },
     },
 
