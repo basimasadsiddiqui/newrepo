@@ -61,3 +61,6 @@ devserver-*.log
 
 # claude AI memory
 .claude/
+
+.vercel
+.env*
